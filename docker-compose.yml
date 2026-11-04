@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Mock OpenAI-compatible provider for zero-paid-key demo
+  mockprovider:
+    build:
+      context: .
+      dockerfile: Dockerfile.mockprovider
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+    restart: unless-stopped
+
+  # Bifrost Gateway with Replay Lab
+  bifrost-replaylab:
+    build:
+      context: .
+      dockerfile: Dockerfile.replaylab
+    ports:
+      - "8085:8085"
+    environment:
+      - PORT=8085
+      - GATEWAY_URL=http://mockprovider:8081
+      - DB_PATH=/data/replaylab.db
+    volumes:
+      - replaylab-data:/data
+    depends_on:
+      - mockprovider
+    restart: unless-stopped
+
+volumes:
+  replaylab-data:

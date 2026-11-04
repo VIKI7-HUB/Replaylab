@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "Bifrost Replay Lab API",
+    "description": "Postman collection for testing the Bifrost Replay Lab plugin and sidecar service (Port 8085).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health & Stored Captures Count",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "health"]
+        }
+      }
+    },
+    {
+      "name": "2. Prometheus Metrics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/metrics",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "metrics"]
+        }
+      }
+    },
+    {
+      "name": "3. Query Recorded Captures",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/captures?model=gpt-4o&limit=5",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "captures"],
+          "query": [
+            {
+              "key": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "4. Launch Model Comparison Experiment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Production Cost Optimization Trial\",\n  \"original_model\": \"gpt-4o\",\n  \"candidate_models\": [\"gpt-4o-mini\", \"claude-3-haiku\"],\n  \"sample_size\": 20,\n  \"budget_cap_dollars\": 10.0,\n  \"dry_run\": false\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "experiments"]
+        }
+      }
+    },
+    {
+      "name": "5. List Past Experiments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments?limit=5",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "experiments"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "6. Get Replay Lab Runtime Config",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/config",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["replaylab", "config"]
+        }
+      }
+    }
+  ]
+}
