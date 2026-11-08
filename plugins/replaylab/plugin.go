@@ -2,8 +2,12 @@ package replaylab
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"sync"
 	"time"
@@ -32,10 +36,9 @@ type PendingCaptureContext struct {
 	Tag          string
 }
 
-// Plugin wires capture, replay and the REST API together. In a Bifrost
-// deployment the gateway hooks call RecordRequest/RecordResponse and route
-// /replaylab/* through InterceptHTTPRequest; standalone, cmd/replaylab serves
-// the API plus a capturing proxy (see ProxyHandler).
+// Plugin wires capture, replay and the REST API together. Inside Bifrost it
+// is registered as a native LLM and HTTP transport plugin (see bifrost.go);
+// standalone, cmd/replaylab serves the API plus a capturing proxy.
 type Plugin struct {
 	config     Config
 	storage    Storage
@@ -43,6 +46,8 @@ type Plugin struct {
 	engine     *ReplayEngine
 	api        *APIHandler
 	pendingMap sync.Map // requestID -> *PendingCaptureContext
+
+	apiServer *http.Server // set when Config.APIListenAddr is used
 
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -73,9 +78,33 @@ func NewPlugin(cfg Config) (*Plugin, error) {
 		api:     api,
 		stop:    make(chan struct{}),
 	}
+	if cfg.APIListenAddr != "" {
+		if err := p.serveAPI(cfg.APIListenAddr); err != nil {
+			_ = p.Cleanup()
+			return nil, err
+		}
+	}
 	p.bgDone.Add(1)
 	go p.janitor()
 	return p, nil
+}
+
+// serveAPI starts a dedicated listener for the /replaylab API. Embedded in
+// Bifrost this is the way to get live SSE progress, since transport hooks
+// buffer responses.
+func (p *Plugin) serveAPI(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("replaylab API listener on %s: %w", addr, err)
+	}
+	p.apiServer = &http.Server{Handler: p.api, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		if err := p.apiServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("replaylab: API server stopped: %v", err)
+		}
+	}()
+	log.Printf("replaylab: API listening on %s", ln.Addr())
+	return nil
 }
 
 // GetName returns the canonical plugin name.
@@ -88,6 +117,11 @@ func (p *Plugin) GetName() string {
 func (p *Plugin) Cleanup() error {
 	var err error
 	p.stopOnce.Do(func() {
+		if p.apiServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = p.apiServer.Shutdown(ctx)
+			cancel()
+		}
 		close(p.stop)
 		p.bgDone.Wait()
 		p.queue.Stop()

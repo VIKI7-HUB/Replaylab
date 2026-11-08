@@ -26,7 +26,7 @@ From `core/schemas/plugin.go`:
 
 ## 3. Chosen Architecture: Dual-Mode Embedded & Sidecar
 
-> Status: the sidecar mode (capturing proxy in `cmd/replaylab`) is implemented. Embedded mode exposes `RecordRequestWithParams`/`RecordResponse`/`InterceptHTTPRequest` for a Bifrost hook adapter, which is not yet written.
+> Status: both modes are implemented. Embedded: `replaylab.Plugin` implements `schemas.LLMPlugin` and `schemas.HTTPTransportPlugin` (Bifrost core v1.15.1, which added `PreRequestHook` and `HTTPTransportPreAuthHook` to the signatures below); see `plugins/replaylab/bifrost.go` and `tests/bifrost_plugin_test.go`. Sidecar: the capturing proxy in `cmd/replaylab`.
 We designed `Replay Lab` to support both native embedded execution and decoupled sidecar deployment:
 1. **Asynchronous Non-Blocking Capture**:
    - `PreLLMHook` captures request timestamp and metadata, stashing a lightweight context snapshot.

@@ -69,7 +69,7 @@ Returns `503` with `"status": "degraded"` if storage is unreachable.
 | `store_hashes_only` | bool | yes (hashed captures cannot be replayed) |
 | `retention_days` | int, 0 = keep forever | yes |
 | `default_budget_cap` | USD | yes |
-| `db_path`, `gateway_url`, `max_queue_size`, `worker_count` | | startup only (ignored on PUT) |
+| `db_path`, `gateway_url`, `max_queue_size`, `worker_count`, `api_listen_addr` | | startup only (ignored on PUT) |
 
 ## Models
 

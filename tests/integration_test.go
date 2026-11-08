@@ -57,12 +57,11 @@ func TestEndToEndReplayFlow(t *testing.T) {
 	}
 
 	// Allow workers to flush queue
-	time.Sleep(350 * time.Millisecond)
+	// Wait for the background writer instead of assuming a flush interval.
+	storage := plugin.Storage()
+	waitForCaptures(t, storage, 5)
 
 	// 4. Create Replay Engine and run experiment
-	storage, _ := replaylab.NewSQLiteStorage(tempDB)
-	defer storage.Close()
-
 	engine := replaylab.NewReplayEngine(storage, mockServer.URL)
 	exp, err := engine.StartExperiment(replaylab.CreateExperimentRequest{
 		Name:             "Integration Test Experiment",

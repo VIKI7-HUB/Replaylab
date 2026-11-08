@@ -1,4 +1,4 @@
-.PHONY: build test vet bench demo traffic run mock clean
+.PHONY: build test vet bench demo demo-bifrost traffic run mock clean
 
 build:
 	go build -o bin/replaylab ./cmd/replaylab
@@ -13,7 +13,11 @@ test: vet
 bench:
 	go test -run '^$$' -bench=. -benchmem ./tests
 
-# Self-contained end-to-end demo (no servers or keys needed).
+# Replay Lab inside the real Bifrost core (no keys needed).
+demo-bifrost:
+	go run ./demo/bifrost_embedded
+
+# Self-contained sidecar demo (no servers or keys needed).
 demo:
 	go run ./demo/run_experiment
 

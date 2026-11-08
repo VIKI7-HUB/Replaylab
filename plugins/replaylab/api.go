@@ -116,6 +116,7 @@ func (h *APIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	updated.MaxQueueSize = current.MaxQueueSize
 	updated.WorkerCount = current.WorkerCount
 	updated.ReplayAuthToken = current.ReplayAuthToken
+	updated.APIListenAddr = current.APIListenAddr
 	if err := updated.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

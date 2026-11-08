@@ -1,7 +1,9 @@
 @echo off
-REM Windows helper. Usage: run.bat [demo^|test^|bench^|mock^|traffic^|run]
+REM Windows helper. Usage: run.bat [bifrost^|demo^|test^|bench^|mock^|traffic^|run]
 setlocal
-if "%1"=="demo" (
+if "%1"=="bifrost" (
+    go run ./demo/bifrost_embedded
+) else if "%1"=="demo" (
     go run ./demo/run_experiment
 ) else if "%1"=="test" (
     go vet ./... && go test ./tests/...

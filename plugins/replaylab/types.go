@@ -63,7 +63,7 @@ type CaptureRecord struct {
 }
 
 // Config controls sampling, privacy, storage, and budget safety.
-// DBPath, GatewayURL, MaxQueueSize and WorkerCount are fixed at startup; the
+// DBPath, GatewayURL, MaxQueueSize, WorkerCount and APIListenAddr are fixed at startup; the
 // rest can be changed at runtime through PUT /replaylab/config.
 type Config struct {
 	Enabled          bool     `json:"enabled"`
@@ -81,6 +81,9 @@ type Config struct {
 	// ReplayAuthToken, when set, is sent as the bearer token for every
 	// replay. It is never serialised.
 	ReplayAuthToken string `json:"-"`
+	// APIListenAddr, when set (e.g. ":8086"), serves the /replaylab API on its
+	// own listener. Useful when embedded in Bifrost. Startup only.
+	APIListenAddr string `json:"api_listen_addr,omitempty"`
 }
 
 // DefaultConfig provides production-ready, safe defaults.

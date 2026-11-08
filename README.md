@@ -3,7 +3,7 @@
 > **Can I switch from `gpt-4o` to a cheaper model without breaking production?**
 > Replay Lab answers that with your own traffic: it captures real gateway requests, replays them against candidate models under a hard budget cap, and returns a `SAFE_TO_SWITCH` / `SWITCH_WITH_CAUTION` / `DO_NOT_SWITCH` verdict with projected monthly savings.
 
-Built for the Bifrost track: Bifrost has routing, caching, governance and logging plugins, but nothing that turns recorded traffic into a model-switch decision (see [DESIGN.md](DESIGN.md)).
+Built for the Bifrost track: Bifrost has routing, caching, governance and logging plugins, but nothing that turns recorded traffic into a model-switch decision (see [DESIGN.md](DESIGN.md)). Replay Lab is a **native Bifrost plugin**: it implements `schemas.LLMPlugin` and `schemas.HTTPTransportPlugin` from Bifrost core v1.15.1 and is tested against the real Bifrost engine.
 
 ## How it works
 
@@ -23,13 +23,14 @@ flowchart LR
 
 ## Quickstart (no API keys needed)
 
-Requires Go 1.26+.
+Requires Go 1.27+.
 
 ```bash
-go run ./demo/run_experiment
+go run ./demo/bifrost_embedded   # inside the real Bifrost core, as a plugin
+go run ./demo/run_experiment     # as a sidecar proxy, no Bifrost needed
 ```
 
-This starts a mock provider and Replay Lab in-process. It sends 200 `gpt-4o` requests through the capture proxy (a quarter of them containing synthetic PII), then replays 50 against three candidates. Output from a real run:
+`bifrost_embedded` boots Bifrost with Replay Lab registered in `LLMPlugins`, sends 120 requests through Bifrost to a mock provider, and replays the captures. `run_experiment` starts a mock provider and Replay Lab in-process. It sends 200 `gpt-4o` requests through the capture proxy (a quarter of them containing synthetic PII), then replays 50 against three candidates. Output from a real run:
 
 | Candidate | Quality | JSON valid | p50 / p95 latency | Cost savings | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -39,7 +40,28 @@ This starts a mock provider and Replay Lab in-process. It sends 200 `gpt-4o` req
 
 The mock provider is deterministic and gives each model tier distinct behaviour (rewording, truncation, broken JSON, occasional 503s); see [internal/mockprovider](internal/mockprovider/mockprovider.go). Flags: `-requests`, `-sample`, `-budget`, `-candidates`, `-latency`.
 
-## Run the server
+## Run inside Bifrost
+
+Register the plugin with the Bifrost Go SDK:
+
+```go
+lab, err := replaylab.NewPlugin(replaylab.DefaultConfig())
+client, err := bifrost.Init(ctx, schemas.BifrostConfig{
+    Account:    account,
+    LLMPlugins: []schemas.LLMPlugin{lab},
+})
+```
+
+| Hook | What Replay Lab does |
+| :--- | :--- |
+| `PreLLMHook` | Stashes the chat request (messages, params, provider, model, virtual key). No I/O. |
+| `PostLLMHook` | Pairs the response or provider error with the request and enqueues it for the background writer. Never changes the response. |
+| `HTTPTransportPreHook` | Serves `/replaylab/*` from the gateway, and copies `X-Replaylab-Tag`, `X-Replaylab-Tenant` and `X-Replaylab-Replay` onto the request context. |
+| other hooks | No-ops |
+
+Replays carry `X-Replaylab-Replay`, so the plugin never captures its own replay traffic. Set `GatewayURL` to your bifrost-http address and name candidates as `provider/model` (for example `anthropic/claude-3-5-haiku`). Set `APIListenAddr` (for example `:8086`) to serve the API on its own port with live SSE progress, since transport hooks buffer responses. Your `go.mod` needs the same `mcp-go` `replace` line as Bifrost core; see this repo's [go.mod](go.mod).
+
+## Run as a sidecar
 
 ```bash
 docker compose up --build          # mock provider on :8081, Replay Lab on :8085
@@ -84,11 +106,12 @@ go vet ./...
 go test ./tests/...
 ```
 
-The tests cover redaction, scoring, recommendations, budget-cap enforcement, upstream failures, proxy capture, SSE termination, config updates and pricing lookup. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) also runs them under the race detector.
+The tests cover redaction, scoring, recommendations, budget-cap enforcement, upstream failures, proxy capture, SSE termination, config updates and pricing lookup. [tests/bifrost_plugin_test.go](tests/bifrost_plugin_test.go) runs the real Bifrost core with the plugin registered: it checks capture and redaction, provider errors, replay skipping, and the API served via the transport hook, then runs a full capture-to-verdict experiment. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) also runs them under the race detector.
 
 ## Limitations
 
 - **Quality is a similarity score, not a semantic judgement.** A candidate that answers correctly in different words scores lower than one that paraphrases closely. An LLM-as-judge tier is designed (DESIGN.md) but not implemented.
 - **Streaming requests are proxied but not captured.**
-- **Embedding inside Bifrost** needs a thin adapter that calls `RecordRequestWithParams` / `RecordResponse` from Bifrost's `PreLLMHook` / `PostLLMHook` and routes `/replaylab/*` through `InterceptHTTPRequest`. That adapter is not in this repo yet; the sidecar proxy is the supported deployment today.
+- **Only non-streaming chat completions are captured** inside Bifrost. Other request types pass through untouched.
+- **Tested against Bifrost core v1.15.1 via the Go SDK.** Loading the plugin into a prebuilt bifrost-http binary depends on that binary's plugin loader, which this repo doesn't cover.
 - Prices in the cost book are list prices and should be checked before quoting real savings.
