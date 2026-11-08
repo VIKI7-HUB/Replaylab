@@ -3,40 +3,25 @@ package replaylab
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 )
 
-// MetricsTracker aggregates runtime counters for Prometheus export.
-type MetricsTracker struct {
-	capturesTotal        atomic.Int64
-	capturesDroppedTotal atomic.Int64
-	replaysTotal         atomic.Int64
-	replaysFailedTotal   atomic.Int64
-}
-
-// NewMetricsTracker creates a tracker.
-func NewMetricsTracker() *MetricsTracker {
-	return &MetricsTracker{}
-}
-
-// FormatPrometheus formats Prometheus-compatible metrics text.
-func (m *MetricsTracker) FormatPrometheus(storage Storage, q *CaptureQueue) string {
+// FormatPrometheus renders Replay Lab counters in the Prometheus text format.
+func FormatPrometheus(storage Storage, q *CaptureQueue, engine *ReplayEngine) string {
 	var sb strings.Builder
+	metric := func(name, kind, help string, value any) {
+		fmt.Fprintf(&sb, "# HELP %s %s\n# TYPE %s %s\n%s %v\n\n", name, help, name, kind, name, value)
+	}
 
-	capTotal, droppedTotal := q.GetMetrics()
-	count, _ := storage.GetCaptureCount()
+	captured, dropped := q.GetMetrics()
+	stored, _ := storage.GetCaptureCount()
+	replays, failed := engine.Metrics()
 
-	sb.WriteString("# HELP bifrost_replaylab_captures_total Total number of traffic captures enqueued\n")
-	sb.WriteString("# TYPE bifrost_replaylab_captures_total counter\n")
-	sb.WriteString(fmt.Sprintf("bifrost_replaylab_captures_total %d\n\n", capTotal))
-
-	sb.WriteString("# HELP bifrost_replaylab_captures_dropped_total Total number of captures dropped due to ring-buffer saturation\n")
-	sb.WriteString("# TYPE bifrost_replaylab_captures_dropped_total counter\n")
-	sb.WriteString(fmt.Sprintf("bifrost_replaylab_captures_dropped_total %d\n\n", droppedTotal))
-
-	sb.WriteString("# HELP bifrost_replaylab_captures_stored_count Current count of stored captures in database\n")
-	sb.WriteString("# TYPE bifrost_replaylab_captures_stored_count gauge\n")
-	sb.WriteString(fmt.Sprintf("bifrost_replaylab_captures_stored_count %d\n\n", count))
-
+	metric("bifrost_replaylab_captures_total", "counter", "Captures accepted into the write queue", captured)
+	metric("bifrost_replaylab_captures_dropped_total", "counter", "Captures dropped because the write queue was full", dropped)
+	metric("bifrost_replaylab_capture_write_errors_total", "counter", "Captures that failed to persist", q.WriteErrors())
+	metric("bifrost_replaylab_captures_stored", "gauge", "Captures currently stored", stored)
+	metric("bifrost_replaylab_replays_total", "counter", "Replays sent to candidate models", replays)
+	metric("bifrost_replaylab_replays_failed_total", "counter", "Replays that returned an error", failed)
+	metric("bifrost_replaylab_experiments_active", "gauge", "Experiments currently running", engine.ActiveExperiments())
 	return sb.String()
 }

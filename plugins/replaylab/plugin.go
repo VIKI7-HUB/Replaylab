@@ -3,13 +3,21 @@ package replaylab
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"time"
 )
 
 const PluginName = "replaylab"
+
+const (
+	// pendingTTL bounds how long a request may wait for its response before
+	// its pending context is discarded (e.g. the client disconnected).
+	pendingTTL      = 10 * time.Minute
+	janitorInterval = time.Minute
+	purgeInterval   = time.Hour
+)
 
 // PendingCaptureContext stashes pre-request context for post-response recording.
 type PendingCaptureContext struct {
@@ -20,10 +28,14 @@ type PendingCaptureContext struct {
 	Provider     string
 	Model        string
 	MessagesJSON string
+	ParamsJSON   string
 	Tag          string
 }
 
-// Plugin implements Bifrost Replay Lab capture, replay engine, and REST API.
+// Plugin wires capture, replay and the REST API together. In a Bifrost
+// deployment the gateway hooks call RecordRequest/RecordResponse and route
+// /replaylab/* through InterceptHTTPRequest; standalone, cmd/replaylab serves
+// the API plus a capturing proxy (see ProxyHandler).
 type Plugin struct {
 	config     Config
 	storage    Storage
@@ -31,10 +43,18 @@ type Plugin struct {
 	engine     *ReplayEngine
 	api        *APIHandler
 	pendingMap sync.Map // requestID -> *PendingCaptureContext
+
+	stop     chan struct{}
+	stopOnce sync.Once
+	bgDone   sync.WaitGroup
 }
 
-// NewPlugin initializes Replay Lab storage, capture queue, replay engine, and API handler.
+// NewPlugin initializes storage, the capture queue, the replay engine, the API
+// handler and the background janitor.
 func NewPlugin(cfg Config) (*Plugin, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid replaylab config: %w", err)
+	}
 	storage, err := NewSQLiteStorage(cfg.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize replaylab storage: %w", err)
@@ -42,15 +62,20 @@ func NewPlugin(cfg Config) (*Plugin, error) {
 
 	queue := NewCaptureQueue(cfg, storage)
 	engine := NewReplayEngine(storage, cfg.GatewayURL)
-	api := NewAPIHandler(storage, engine, queue, cfg)
+	engine.SetAuthToken(cfg.ReplayAuthToken)
+	api := NewAPIHandler(storage, engine, queue)
 
-	return &Plugin{
+	p := &Plugin{
 		config:  cfg,
 		storage: storage,
 		queue:   queue,
 		engine:  engine,
 		api:     api,
-	}, nil
+		stop:    make(chan struct{}),
+	}
+	p.bgDone.Add(1)
+	go p.janitor()
+	return p, nil
 }
 
 // GetName returns the canonical plugin name.
@@ -58,10 +83,17 @@ func (p *Plugin) GetName() string {
 	return PluginName
 }
 
-// Cleanup drains write queues and releases resources on gateway shutdown.
+// Cleanup stops background work, drains the capture queue and closes storage.
+// It is safe to call more than once.
 func (p *Plugin) Cleanup() error {
-	p.queue.Stop()
-	return p.storage.Close()
+	var err error
+	p.stopOnce.Do(func() {
+		close(p.stop)
+		p.bgDone.Wait()
+		p.queue.Stop()
+		err = p.storage.Close()
+	})
+	return err
 }
 
 // GetAPIHandler returns the HTTP handler for sidecar or embedded serving.
@@ -69,9 +101,25 @@ func (p *Plugin) GetAPIHandler() *APIHandler {
 	return p.api
 }
 
-// RecordRequest captures inbound request details asynchronously before sending to provider.
+// Storage exposes the capture and experiment store.
+func (p *Plugin) Storage() Storage {
+	return p.storage
+}
+
+// Engine exposes the replay engine (used by demos and embedding code).
+func (p *Plugin) Engine() *ReplayEngine {
+	return p.engine
+}
+
+// RecordRequest stashes request details until the matching response arrives.
 func (p *Plugin) RecordRequest(reqID, virtualKey, tenant, provider, model, messagesJSON, tag string) {
-	if !p.queue.ShouldCapture(virtualKey) {
+	p.RecordRequestWithParams(reqID, virtualKey, tenant, provider, model, messagesJSON, "", tag)
+}
+
+// RecordRequestWithParams is RecordRequest plus the non-message request
+// parameters, which replays reuse so candidates see the same call shape.
+func (p *Plugin) RecordRequestWithParams(reqID, virtualKey, tenant, provider, model, messagesJSON, paramsJSON, tag string) {
+	if reqID == "" || !p.queue.ShouldCapture(virtualKey) {
 		return
 	}
 	p.pendingMap.Store(reqID, &PendingCaptureContext{
@@ -82,22 +130,21 @@ func (p *Plugin) RecordRequest(reqID, virtualKey, tenant, provider, model, messa
 		Provider:     provider,
 		Model:        model,
 		MessagesJSON: messagesJSON,
+		ParamsJSON:   paramsJSON,
 		Tag:          tag,
 	})
 }
 
-// RecordResponse pairs response metadata with the stashed request context and enqueues to background writer.
-func (p *Plugin) RecordResponse(reqID string, responseJSON string, promptTokens, completionTokens int, statusCode int, errMsg string, isStreaming bool) {
+// RecordResponse pairs a response with its stashed request and enqueues the
+// capture for the background writers. responseContent is the assistant text.
+func (p *Plugin) RecordResponse(reqID string, responseContent string, promptTokens, completionTokens int, statusCode int, errMsg string, isStreaming bool) {
 	val, ok := p.pendingMap.LoadAndDelete(reqID)
 	if !ok {
 		return
 	}
 	pending := val.(*PendingCaptureContext)
 
-	latency := time.Since(pending.StartTime).Milliseconds()
-	cost := EstimateCost(pending.Model, promptTokens, completionTokens)
-
-	record := &CaptureRecord{
+	p.queue.Enqueue(&CaptureRecord{
 		RequestID:        pending.RequestID,
 		Timestamp:        pending.StartTime,
 		VirtualKey:       pending.VirtualKey,
@@ -105,24 +152,25 @@ func (p *Plugin) RecordResponse(reqID string, responseJSON string, promptTokens,
 		Provider:         pending.Provider,
 		Model:            pending.Model,
 		MessagesJSON:     pending.MessagesJSON,
-		ResponseJSON:     responseJSON,
+		ParamsJSON:       pending.ParamsJSON,
+		ResponseJSON:     responseContent,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
-		LatencyMs:        latency,
-		CostEstimate:     cost,
+		LatencyMs:        time.Since(pending.StartTime).Milliseconds(),
+		CostEstimate:     EstimateCost(pending.Model, promptTokens, completionTokens),
 		StatusCode:       statusCode,
 		ErrorMessage:     errMsg,
 		IsStreaming:      isStreaming,
 		Tag:              pending.Tag,
-	}
-
-	p.queue.Enqueue(record)
+	})
 }
 
-// InterceptHTTPRequest checks if the incoming request path targets /replaylab/* and serves it directly.
+// InterceptHTTPRequest serves /replaylab/* requests in embedded mode. It
+// returns handled=false for any other path. SSE endpoints need a streaming
+// transport and should be served through GetAPIHandler instead.
 func (p *Plugin) InterceptHTTPRequest(method, path string, headers map[string]string, body []byte) (bool, int, map[string]string, []byte) {
-	if !strings.HasPrefix(path, "/replaylab/") && path != "/replaylab" {
+	if !IsAPIPath(path) {
 		return false, 0, nil, nil
 	}
 
@@ -134,10 +182,54 @@ func (p *Plugin) InterceptHTTPRequest(method, path string, headers map[string]st
 	rec := httptest.NewRecorder()
 	p.api.ServeHTTP(rec, req)
 
-	respHeaders := make(map[string]string)
+	respHeaders := make(map[string]string, len(rec.Header()))
 	for k := range rec.Header() {
 		respHeaders[k] = rec.Header().Get(k)
 	}
-
 	return true, rec.Code, respHeaders, rec.Body.Bytes()
+}
+
+// janitor evicts abandoned pending captures and enforces retention.
+func (p *Plugin) janitor() {
+	defer p.bgDone.Done()
+	sweep := time.NewTicker(janitorInterval)
+	defer sweep.Stop()
+	purge := time.NewTicker(purgeInterval)
+	defer purge.Stop()
+
+	p.purgeExpired()
+	for {
+		select {
+		case <-p.stop:
+			return
+		case <-sweep.C:
+			p.evictStalePending(time.Now().Add(-pendingTTL))
+		case <-purge.C:
+			p.purgeExpired()
+		}
+	}
+}
+
+func (p *Plugin) evictStalePending(cutoff time.Time) {
+	p.pendingMap.Range(func(key, val any) bool {
+		if val.(*PendingCaptureContext).StartTime.Before(cutoff) {
+			p.pendingMap.Delete(key)
+		}
+		return true
+	})
+}
+
+func (p *Plugin) purgeExpired() {
+	days := p.queue.Config().RetentionDays
+	if days <= 0 {
+		return
+	}
+	n, err := p.storage.PurgeExpiredCaptures(days)
+	if err != nil {
+		log.Printf("replaylab: retention purge failed: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("replaylab: purged %d captures older than %d days", n, days)
+	}
 }

@@ -18,6 +18,30 @@ type CaptureFilter struct {
 	Limit      int
 	Offset     int
 	Since      *time.Time
+	// Replayable restricts results to successful, non-hashed captures,
+	// i.e. the ones that can be meaningfully replayed and scored.
+	Replayable bool
+}
+
+// TrafficVolume summarises how much traffic was captured for a model.
+type TrafficVolume struct {
+	Count int64
+	First time.Time
+	Last  time.Time
+}
+
+// MonthlyEstimate extrapolates the captured rate to a 30-day volume. Spans
+// shorter than a day are treated as a full day to avoid wild projections.
+func (v TrafficVolume) MonthlyEstimate() int64 {
+	if v.Count == 0 {
+		return 0
+	}
+	span := v.Last.Sub(v.First)
+	if span < 24*time.Hour {
+		span = 24 * time.Hour
+	}
+	perDay := float64(v.Count) / span.Hours() * 24
+	return int64(perDay * 30)
 }
 
 // Storage abstracts the persistence backend for captures and experiments.
@@ -27,6 +51,7 @@ type Storage interface {
 	GetCaptures(filter CaptureFilter) ([]*CaptureRecord, error)
 	GetCaptureByID(id string) (*CaptureRecord, error)
 	GetCaptureCount() (int64, error)
+	GetTrafficVolume(model string) (TrafficVolume, error)
 	SaveExperiment(exp *Experiment) error
 	GetExperiment(id string) (*Experiment, error)
 	ListExperiments(limit, offset int) ([]*Experiment, error)
@@ -46,9 +71,16 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	// Configure connection pool for SQLite concurrency
+	// SQLite allows a single writer; one connection serialises access and
+	// WAL + busy_timeout keep readers from failing under write load.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	for _, pragma := range []string{"PRAGMA journal_mode=WAL", "PRAGMA busy_timeout=5000"} {
+		if _, err := db.Exec(pragma); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to configure sqlite (%s): %w", pragma, err)
+		}
+	}
 
 	s := &SQLiteStorage{db: db}
 	if err := s.initSchema(); err != nil {
@@ -170,6 +202,9 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 		conditions = append(conditions, "timestamp >= ?")
 		args = append(args, filter.Since.UTC())
 	}
+	if filter.Replayable {
+		conditions = append(conditions, "status_code BETWEEN 200 AND 299", "hash_only = 0")
+	}
 
 	query := `
 		SELECT id, request_id, timestamp, virtual_key, tenant, provider, model,
@@ -187,7 +222,9 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	query += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, filter.Offset)
+	offset := max(filter.Offset, 0)
+	query += " LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -249,6 +286,36 @@ func (s *SQLiteStorage) GetCaptureCount() (int64, error) {
 	return count, err
 }
 
+// GetTrafficVolume reports how many successful captures exist for a model
+// and the time span they cover. An empty model matches all captures.
+func (s *SQLiteStorage) GetTrafficVolume(model string) (TrafficVolume, error) {
+	where := " WHERE status_code BETWEEN 200 AND 299"
+	var args []any
+	if model != "" {
+		where += " AND model = ?"
+		args = append(args, model)
+	}
+	var v TrafficVolume
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM captures"+where, args...).Scan(&v.Count); err != nil {
+		return v, err
+	}
+	if v.Count == 0 {
+		return v, nil
+	}
+	// Read the boundary rows rather than MIN/MAX aggregates: aggregates lose
+	// the DATETIME column type, so the driver would return untyped text.
+	for _, q := range []struct {
+		order string
+		dst   *time.Time
+	}{{"ASC", &v.First}, {"DESC", &v.Last}} {
+		query := "SELECT timestamp FROM captures" + where + " ORDER BY timestamp " + q.order + " LIMIT 1"
+		if err := s.db.QueryRow(query, args...).Scan(q.dst); err != nil {
+			return v, err
+		}
+	}
+	return v, nil
+}
+
 // SaveExperiment stores or updates an experiment record.
 func (s *SQLiteStorage) SaveExperiment(exp *Experiment) error {
 	dataBytes, err := json.Marshal(exp)
@@ -289,9 +356,10 @@ func (s *SQLiteStorage) GetExperiment(id string) (*Experiment, error) {
 
 // ListExperiments retrieves paginated experiment records.
 func (s *SQLiteStorage) ListExperiments(limit, offset int) ([]*Experiment, error) {
-	if limit <= 0 {
+	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
+	offset = max(offset, 0)
 	rows, err := s.db.Query(
 		"SELECT data_json FROM experiments ORDER BY created_at DESC LIMIT ? OFFSET ?",
 		limit, offset,
@@ -308,9 +376,10 @@ func (s *SQLiteStorage) ListExperiments(limit, offset int) ([]*Experiment, error
 			return nil, err
 		}
 		var exp Experiment
-		if err := json.Unmarshal([]byte(dataStr), &exp); err == nil {
-			experiments = append(experiments, &exp)
+		if err := json.Unmarshal([]byte(dataStr), &exp); err != nil {
+			return nil, fmt.Errorf("corrupt experiment record: %w", err)
 		}
+		experiments = append(experiments, &exp)
 	}
 	return experiments, rows.Err()
 }

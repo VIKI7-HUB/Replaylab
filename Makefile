@@ -1,27 +1,31 @@
-.PHONY: setup build test bench run demo traffic clean
-
-setup:
-	go mod download
-	go mod tidy
+.PHONY: build test vet bench demo traffic run mock clean
 
 build:
-	go build -o bin/replaylab.exe ./cmd/replaylab
-	go build -o bin/mockprovider.exe ./cmd/mockprovider
+	go build -o bin/replaylab ./cmd/replaylab
+	go build -o bin/mockprovider ./cmd/mockprovider
 
-test:
-	go test -v ./tests/...
+vet:
+	go vet ./...
+
+test: vet
+	go test ./tests/...
 
 bench:
-	go test -bench=BenchmarkCaptureQueueEnqueue -benchmem ./tests
+	go test -run '^$$' -bench=. -benchmem ./tests
 
+# Self-contained end-to-end demo (no servers or keys needed).
+demo:
+	go run ./demo/run_experiment
+
+mock:
+	go run ./cmd/mockprovider
+
+run:
+	go run ./cmd/replaylab -port=8085 -gateway=http://localhost:8081
+
+# Send traffic through a running Replay Lab proxy.
 traffic:
-	go run demo/generate_traffic.go
-
-run: build
-	./bin/replaylab.exe -port=8085
-
-demo: traffic
-	go run demo/run_experiment.go
+	go run ./demo/generate_traffic
 
 clean:
-	rm -rf bin/ replaylab.db
+	rm -rf bin/ replaylab.db replaylab.db-wal replaylab.db-shm

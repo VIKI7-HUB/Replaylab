@@ -1,64 +1,39 @@
 {
   "info": {
-    "name": "Bifrost Replay Lab API",
-    "description": "Postman collection for testing the Bifrost Replay Lab plugin and sidecar service (Port 8085).",
+    "name": "Bifrost Replay Lab",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    {
+      "key": "experiment_id",
+      "value": "exp-replace-me"
+    }
+  ],
   "item": [
     {
-      "name": "1. Health & Stored Captures Count",
+      "name": "Health",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://localhost:8085/replaylab/health",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "health"]
-        }
+          "raw": "http://localhost:8085/replaylab/health"
+        },
+        "description": ""
       }
     },
     {
-      "name": "2. Prometheus Metrics",
+      "name": "Prometheus metrics",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://localhost:8085/replaylab/metrics",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "metrics"]
-        }
+          "raw": "http://localhost:8085/replaylab/metrics"
+        },
+        "description": ""
       }
     },
     {
-      "name": "3. Query Recorded Captures",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:8085/replaylab/captures?model=gpt-4o&limit=5",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "captures"],
-          "query": [
-            {
-              "key": "model",
-              "value": "gpt-4o"
-            },
-            {
-              "key": "limit",
-              "value": "5"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "4. Launch Model Comparison Experiment",
+      "name": "Capture via proxy",
       "request": {
         "method": "POST",
         "header": [
@@ -67,51 +42,162 @@
             "value": "application/json"
           }
         ],
+        "url": {
+          "raw": "http://localhost:8085/v1/chat/completions"
+        },
+        "description": "Forwarded to GATEWAY_URL and captured. Add X-Replaylab-Tag to group traffic.",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"name\": \"Production Cost Optimization Trial\",\n  \"original_model\": \"gpt-4o\",\n  \"candidate_models\": [\"gpt-4o-mini\", \"claude-3-haiku\"],\n  \"sample_size\": 20,\n  \"budget_cap_dollars\": 10.0,\n  \"dry_run\": false\n}"
+          "raw": "{\n  \"model\": \"gpt-4o\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Extract the structured JSON object containing name, email, and company from: 'Alice at alice@example.com, Acme Corp.'\"\n    }\n  ],\n  \"response_format\": {\n    \"type\": \"json_object\"\n  }\n}"
+        }
+      }
+    },
+    {
+      "name": "List captures",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/captures?model=gpt-4o&limit=5"
         },
-        "url": {
-          "raw": "http://localhost:8085/replaylab/experiments",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "experiments"]
-        }
+        "description": ""
       }
     },
     {
-      "name": "5. List Past Experiments",
+      "name": "Get config",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://localhost:8085/replaylab/experiments?limit=5",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "experiments"],
-          "query": [
-            {
-              "key": "limit",
-              "value": "5"
-            }
-          ]
+          "raw": "http://localhost:8085/replaylab/config"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Update config (partial)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/config"
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sampling_rate\": 0.5\n}"
         }
       }
     },
     {
-      "name": "6. Get Replay Lab Runtime Config",
+      "name": "Price book",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://localhost:8085/replaylab/config",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8085",
-          "path": ["replaylab", "config"]
+          "raw": "http://localhost:8085/replaylab/models"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Dry run (cost estimate)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments"
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Estimate\",\n  \"original_model\": \"gpt-4o\",\n  \"candidate_models\": [\n    \"gpt-4o-mini\",\n    \"claude-3-haiku\"\n  ],\n  \"sample_size\": 50,\n  \"dry_run\": true\n}"
         }
+      }
+    },
+    {
+      "name": "Start experiment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments"
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Cost reduction trial\",\n  \"original_model\": \"gpt-4o\",\n  \"candidate_models\": [\n    \"gpt-4o-mini\",\n    \"claude-3-haiku\",\n    \"meta-llama-3.1-8b\"\n  ],\n  \"sample_size\": 50,\n  \"budget_cap_dollars\": 10.0\n}"
+        }
+      }
+    },
+    {
+      "name": "List experiments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments?limit=5"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Get experiment",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments/{{experiment_id}}"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Live progress (SSE)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments/{{experiment_id}}/events"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Markdown report",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments/{{experiment_id}}/report?format=markdown"
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Cancel experiment",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8085/replaylab/experiments/{{experiment_id}}/cancel"
+        },
+        "description": ""
       }
     }
   ]

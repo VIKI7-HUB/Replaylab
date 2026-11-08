@@ -1,173 +1,94 @@
 # Bifrost Replay Lab
 
-> **A Feature the Open-Source Bifrost Gateway Is Missing (Bifrost Priority Track)**  
-> Capture real production gateway traffic, replay it against cheaper or faster candidate models, enforce hard budget caps, and generate automated "Safe-to-Switch" ROI recommendations.
+> **Can I switch from `gpt-4o` to a cheaper model without breaking production?**
+> Replay Lab answers that with your own traffic: it captures real gateway requests, replays them against candidate models under a hard budget cap, and returns a `SAFE_TO_SWITCH` / `SWITCH_WITH_CAUTION` / `DO_NOT_SWITCH` verdict with projected monthly savings.
 
----
+Built for the Bifrost track: Bifrost has routing, caching, governance and logging plugins, but nothing that turns recorded traffic into a model-switch decision (see [DESIGN.md](DESIGN.md)).
 
-## 30-Second Explanation
-
-When managing enterprise LLM infrastructure, switching from a flagship model (like `gpt-4o`) to a cheaper alternative (`gpt-4o-mini`, `claude-3-haiku`, or a local fine-tune) can save 80–90% in inference costs. However, operators hesitate because they fear unexpected quality drops, broken JSON outputs, or latency spikes.
-
-**Bifrost Replay Lab** extends the open-source Bifrost gateway with an automated shadow replay lab:
-1. **Asynchronously captures** real traffic with zero overhead on the hot path (< 15 microseconds per request).
-2. **Redacts PII** (emails, phone numbers, API keys, credit cards) before storage.
-3. **Replays traffic** through candidate models with a strict budget cap (cannot overspend).
-4. **Calculates quality similarity**, JSON schema validity preservation, and p50/p95 latency shifts.
-5. **Issues actionable recommendations** (`SAFE_TO_SWITCH`, `SWITCH_WITH_CAUTION`, `DO_NOT_SWITCH`) and calculates **Projected Monthly Savings**.
-
----
-
-## Architecture Diagram
+## How it works
 
 ```mermaid
-flowchart TD
-    subgraph Bifrost Gateway
-        A[Inbound Client Request] --> B[HTTPTransportPreHook]
-        B -- "/replaylab/*" --> C[Replay Lab REST & SSE API]
-        B -- Regular Traffic --> D[PreLLMHook / Dispatch]
-        D --> E[Upstream LLM Provider]
-        E --> F[PostLLMHook]
-        F --> G[Client Response]
-    end
-
-    subgraph Replay Lab Core
-        D -. "Async Stash" .-> H[Ring-Buffered Queue]
-        F -. "Response + Latency" .-> H
-        H --> I[PII Redactor / Hash Scrubber]
-        I --> J[(SQLite / Postgres Storage)]
-        J --> K[Replay Engine with Hard Budget Cap]
-        K --> L[Candidate Models gpt-4o-mini / Haiku]
-        L --> M[Scoring Engine JSON + Jaccard]
-        M --> N[Recommender & Markdown Reporter]
-    end
+flowchart LR
+    C[Client] -->|/v1/chat/completions| P[Capture proxy]
+    P --> G[Bifrost / any OpenAI-compatible gateway]
+    P -. async, non-blocking .-> Q[Ring buffer] --> R[PII redaction / hashing] --> DB[(SQLite)]
+    DB --> E[Replay engine<br/>hard budget cap] --> G
+    E --> S[Scoring: JSON contract,<br/>similarity, latency, cost] --> V[Verdict + report<br/>REST, SSE, Markdown]
 ```
 
----
+1. **Capture.** The proxy forwards each request and records it off the hot path. If the buffer is full the capture is dropped and counted; the request is never slowed. Sampling rate and per-key opt-in/opt-out are configurable at runtime.
+2. **Protect.** Emails, phone numbers, card numbers and API tokens are redacted before anything reaches disk. Hash-only mode stores SHA-256 digests instead. Captures expire after `retention_days`.
+3. **Replay.** Captured prompts are replayed with their original parameters (`max_tokens`, `response_format`, ...) at temperature 0. Before every call the engine checks that the projected cost still fits the budget, and stops with partial results if it doesn't.
+4. **Score and decide.** Each candidate is scored on JSON-contract preservation, lexical similarity, latency (p50/p95), error rate and cost. Thresholds live in one place ([recommender.go](plugins/replaylab/recommender.go)). Savings are projected from the traffic rate actually observed.
 
-## Quickstart (Non-Technical Setup)
+## Quickstart (no API keys needed)
 
-### 1. Requirements
-- Go 1.22+ (installed)
+Requires Go 1.26+.
 
-### 2. Run the End-to-End Demo (Zero Paid Keys Required)
-The demo includes a built-in mock provider simulating varied latency and token profiles, plus a traffic generator that seeds 200 varied production requests:
-
-```powershell
-# Step A: Seed 200 production requests with PII scrubbing into SQLite
-go run demo/generate_traffic.go
-
-# Step B: Execute model comparison experiment with live terminal streaming
-go run demo/run_experiment.go
-```
-
-### 3. Run All Unit & Integration Tests
-```powershell
-go test -v ./tests/...
-```
-
-### 4. Run the Performance Benchmark
-Measures the non-blocking capture enqueue overhead:
-```powershell
-go test -bench=BenchmarkCaptureQueueEnqueue -benchmem ./tests
-```
-> **Benchmark Result:** **~14.3 microseconds / op** with 900 B allocation overhead. Negligible impact on the gateway hot path!
-
-### 5. Start the Standalone Replay Lab Server
-```powershell
-go run cmd/replaylab/main.go -port=8085 -gateway=http://localhost:8081
-```
-
----
-
-## REST API Reference & Curl Examples
-
-### 1. Check Health & Stored Captures (`GET /replaylab/health`)
 ```bash
-curl http://localhost:8085/replaylab/health
+go run ./demo/run_experiment
 ```
 
-### 2. Inspect Prometheus Metrics (`GET /replaylab/metrics`)
-```bash
-curl http://localhost:8085/replaylab/metrics
-```
-```text
-# HELP bifrost_replaylab_captures_total Total number of traffic captures enqueued
-# TYPE bifrost_replaylab_captures_total counter
-bifrost_replaylab_captures_total 200
+This starts a mock provider and Replay Lab in-process. It sends 200 `gpt-4o` requests through the capture proxy (a quarter of them containing synthetic PII), then replays 50 against three candidates. Output from a real run:
 
-# HELP bifrost_replaylab_captures_dropped_total Total number of captures dropped
-# TYPE bifrost_replaylab_captures_dropped_total counter
-bifrost_replaylab_captures_dropped_total 0
-```
-
-### 3. Query Stored Captures (`GET /replaylab/captures`)
-```bash
-curl "http://localhost:8085/replaylab/captures?model=gpt-4o&limit=5"
-```
-
-### 4. Launch a Model Comparison Experiment (`POST /replaylab/experiments`)
-```bash
-curl -X POST "http://localhost:8085/replaylab/experiments" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Cost Reduction Trial",
-    "original_model": "gpt-4o",
-    "candidate_models": ["gpt-4o-mini", "claude-3-haiku"],
-    "sample_size": 50,
-    "budget_cap_dollars": 10.0,
-    "dry_run": false
-  }'
-```
-
-### 5. Stream Live Replay Progress via SSE (`GET /replaylab/experiments/{id}/events`)
-```bash
-curl -N "http://localhost:8085/replaylab/experiments/exp-12345/events"
-```
-
-### 6. Export Shareable Markdown Report (`GET /replaylab/experiments/{id}/report?format=markdown`)
-```bash
-curl "http://localhost:8085/replaylab/experiments/exp-12345/report?format=markdown"
-```
-
----
-
-## Sample Experiment Recommendation Report
-
-```markdown
-# Bifrost Replay Lab: Experiment Report (Production Cost Optimization Trial)
-
-- **Experiment ID:** `exp-64435bb7-9`
-- **Baseline Model:** `gpt-4o`
-- **Total Replays Run:** 100 / 100
-- **Total Budget Spent:** $0.0037 / $25.00 cap
-
-## Candidate Model Comparison & Recommendations
-
-| Candidate Model | Quality (0-100) | p50 / p95 Latency | Cost Savings | Verdict | Projected Monthly Savings |
+| Candidate | Quality | JSON valid | p50 / p95 latency | Cost savings | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `gpt-4o-mini` | **92.4** | 98ms / 118ms (-35%) | **94.0%** ($0.0520) | **SAFE TO SWITCH** | **$1,040.00/mo** |
-| `claude-3-haiku` | **88.6** | 62ms / 78ms (-58%) | **91.5%** ($0.0485) | **SAFE TO SWITCH** | **$970.00/mo** |
+| `gpt-4o-mini` | 94.7 | 100% of 12 | 23ms / 29ms (-43%) | 94.1% | **SAFE TO SWITCH** |
+| `claude-3-haiku` | 71.9 | 100% of 12 | 16ms / 19ms (-60%) | 91.6% | *SWITCH WITH CAUTION* |
+| `meta-llama-3.1-8b` | 34.9 | 50% of 12 | 11ms / 14ms (-73%) | 99.6% | DO NOT SWITCH |
 
-## Strategic Decision Guidance
+The mock provider is deterministic and gives each model tier distinct behaviour (rewording, truncation, broken JSON, occasional 503s); see [internal/mockprovider](internal/mockprovider/mockprovider.go). Flags: `-requests`, `-sample`, `-budget`, `-candidates`, `-latency`.
 
-### `gpt-4o` -> `gpt-4o-mini`
-- **Verdict:** `SAFE_TO_SWITCH`
-- **Projected Monthly ROI:** $1,040.00 / month
-- **Operator Rationale:** High quality retention (92.4/100); Latency improved by 35.0%; Cost savings of 94.0%
+## Run the server
+
+```bash
+docker compose up --build          # mock provider on :8081, Replay Lab on :8085
+go run ./demo/generate_traffic     # send 200 requests through the proxy
 ```
 
----
+Without Docker (Windows): `run.bat mock` in one terminal, `run.bat` in another, then `run.bat traffic`.
 
-## Security & Privacy by Design
+Point any OpenAI SDK at `http://localhost:8085/v1` to capture its traffic. To replay through a real gateway, set `GATEWAY_URL` (and `REPLAY_AUTH_TOKEN` if replays need a key other than the captured virtual key).
 
-- **PII Scrubbing**: Built-in regex engine sanitizes emails, phone numbers, credit cards, and Bearer / API tokens before any record touches storage.
-- **Opt-in / Opt-out Filtering**: Restrict capture only to selected tenants or keys.
-- **Hash-Only Storage**: Supports storing SHA256 hashes instead of prompt text for zero-data-retention compliance.
-- **Hard Budget Caps**: Replay processes monitor spending in real time and automatically abort if expenditure exceeds the operator's budget limit.
+## API
 
----
+Full reference with request/response shapes: [docs/replaylab.md](docs/replaylab.md). Postman collection: [demo/replaylab.postman_collection.json](demo/replaylab.postman_collection.json).
 
-## Upstream Contribution Fit
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/v1/chat/completions` | Capturing proxy (OpenAI-compatible) |
+| `GET` | `/replaylab/health` | Status, stored/dropped captures, active experiments |
+| `GET` | `/replaylab/metrics` | Prometheus metrics |
+| `GET` / `PUT` | `/replaylab/config` | Read / partially update runtime config |
+| `GET` | `/replaylab/models` | Price book used for cost estimates |
+| `GET` | `/replaylab/captures`, `/replaylab/captures/{id}` | Browse captures |
+| `POST` | `/replaylab/experiments` | Start an experiment (`"dry_run": true` to estimate cost) |
+| `GET` | `/replaylab/experiments`, `/replaylab/experiments/{id}` | List / poll experiments |
+| `POST` | `/replaylab/experiments/{id}/cancel` | Stop a running experiment |
+| `GET` | `/replaylab/experiments/{id}/events` | Live progress (SSE); always ends with `"final": true` |
+| `GET` | `/replaylab/experiments/{id}/report?format=markdown` | Shareable report |
 
-Built against official Bifrost hook specifications (`core/schemas/plugin.go`). Fits standard plugin conventions (`plugins/replaylab/`) with zero CGO dependencies (`modernc.org/sqlite`), clean `go vet`, and race-clean execution.
+## Performance
+
+`go test -bench=. -benchmem ./tests` on an Intel i5-12450H:
+
+| Benchmark | Result |
+| :--- | :--- |
+| Capture hot path (enqueue only) | ~2.4 µs/op, 946 B/op |
+| Enqueue with SQLite writers running on the same machine | ~57 µs/op (~17k captures/s sustained) |
+
+## Testing
+
+```bash
+go vet ./...
+go test ./tests/...
+```
+
+The tests cover redaction, scoring, recommendations, budget-cap enforcement, upstream failures, proxy capture, SSE termination, config updates and pricing lookup. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) also runs them under the race detector.
+
+## Limitations
+
+- **Quality is a similarity score, not a semantic judgement.** A candidate that answers correctly in different words scores lower than one that paraphrases closely. An LLM-as-judge tier is designed (DESIGN.md) but not implemented.
+- **Streaming requests are proxied but not captured.**
+- **Embedding inside Bifrost** needs a thin adapter that calls `RecordRequestWithParams` / `RecordResponse` from Bifrost's `PreLLMHook` / `PostLLMHook` and routes `/replaylab/*` through `InterceptHTTPRequest`. That adapter is not in this repo yet; the sidecar proxy is the supported deployment today.
+- Prices in the cost book are list prices and should be checked before quoting real savings.

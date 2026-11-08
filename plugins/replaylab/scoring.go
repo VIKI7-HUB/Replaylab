@@ -2,7 +2,9 @@ package replaylab
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -16,65 +18,90 @@ func NewQualityScorer() *QualityScorer {
 	return &QualityScorer{}
 }
 
-// ComputeQualityScore evaluates candidate response text against the original response.
-// Returns a 0-100 score, JSON validity boolean, and explanation notes.
-func (qs *QualityScorer) ComputeQualityScore(origText, candText string) (float64, bool, []string) {
-	origTrimmed := strings.TrimSpace(origText)
-	candTrimmed := strings.TrimSpace(candText)
+// QualityResult is the outcome of comparing a candidate response to the
+// baseline response for the same prompt.
+type QualityResult struct {
+	Score float64 // 0-100
+	// BaselineJSON is true when the baseline response was JSON, i.e. when
+	// CandidateJSONValid is meaningful.
+	BaselineJSON       bool
+	CandidateJSONValid bool
+	Notes              []string
+}
 
-	if origTrimmed == "" && candTrimmed == "" {
-		return 100.0, true, []string{"Both empty"}
-	}
-	if origTrimmed != "" && candTrimmed == "" {
-		return 0.0, false, []string{"Candidate returned empty response"}
-	}
+// Score compares a candidate response against the baseline response.
+//
+// JSON baselines weight structural fidelity (key overlap) highest, because a
+// cheaper model that breaks a JSON contract breaks the caller. Free-text
+// baselines use lexical (Jaccard) similarity plus a length-ratio term.
+func (qs *QualityScorer) Score(origText, candText string) QualityResult {
+	origTrimmed := stripCodeFence(strings.TrimSpace(origText))
+	candTrimmed := stripCodeFence(strings.TrimSpace(candText))
 
-	var notes []string
-
-	// 1. Exact Match Check (100%)
-	if origTrimmed == candTrimmed {
-		return 100.0, true, []string{"Exact match"}
-	}
-
-	// 2. JSON Validity and Key Match Check
 	isOrigJSON, origKeys := extractJSONKeys(origTrimmed)
 	isCandJSON, candKeys := extractJSONKeys(candTrimmed)
+	res := QualityResult{BaselineJSON: isOrigJSON, CandidateJSONValid: !isOrigJSON || isCandJSON}
 
-	var jsonScore float64 = 100.0
-	var jsonValid bool = true
+	switch {
+	case origTrimmed == "" && candTrimmed == "":
+		res.Score, res.CandidateJSONValid = 100, true
+		res.Notes = []string{"Both empty"}
+		return res
+	case candTrimmed == "":
+		res.Score, res.CandidateJSONValid = 0, false
+		res.Notes = []string{"Candidate returned empty response"}
+		return res
+	case origTrimmed == candTrimmed:
+		res.Score, res.CandidateJSONValid = 100, true
+		res.Notes = []string{"Exact match"}
+		return res
+	}
 
+	jsonScore := 100.0
 	if isOrigJSON {
 		if !isCandJSON {
 			jsonScore = 20.0
-			jsonValid = false
-			notes = append(notes, "Original was valid JSON but candidate output failed JSON parsing")
+			res.Notes = append(res.Notes, "Baseline was JSON but candidate output failed JSON parsing")
 		} else {
-			// Compare JSON keys overlap
-			keyOverlap := computeKeyOverlap(origKeys, candKeys)
-			jsonScore = keyOverlap * 100.0
-			notes = append(notes, "JSON schema keys matched")
+			overlap := computeKeyOverlap(origKeys, candKeys)
+			jsonScore = overlap * 100.0
+			res.Notes = append(res.Notes, fmt.Sprintf("JSON keys preserved: %.0f%%", jsonScore))
 		}
 	}
 
-	// 3. Length Ratio Metric (0 - 100)
 	lenOrig := float64(len(origTrimmed))
 	lenCand := float64(len(candTrimmed))
-	ratio := math.Min(lenOrig, lenCand) / math.Max(lenOrig, lenCand)
-	lengthScore := ratio * 100.0
-
-	// 4. Token / Jaccard Lexical Similarity (0 - 100)
+	lengthScore := math.Min(lenOrig, lenCand) / math.Max(lenOrig, lenCand) * 100.0
 	jaccardScore := computeJaccardSimilarity(origTrimmed, candTrimmed) * 100.0
 
-	// Aggregate Weighted Quality Score
-	var finalQuality float64
+	var final float64
 	if isOrigJSON {
-		finalQuality = (0.50 * jsonScore) + (0.30 * jaccardScore) + (0.20 * lengthScore)
+		final = (0.50 * jsonScore) + (0.30 * jaccardScore) + (0.20 * lengthScore)
 	} else {
-		finalQuality = (0.65 * jaccardScore) + (0.35 * lengthScore)
+		final = (0.65 * jaccardScore) + (0.35 * lengthScore)
 	}
+	res.Score = math.Round(math.Max(0.0, math.Min(100.0, final))*10) / 10
+	return res
+}
 
-	finalQuality = math.Round(math.Max(0.0, math.Min(100.0, finalQuality))*10) / 10
-	return finalQuality, jsonValid, notes
+// ComputeQualityScore is the tuple form of Score: (score, candidate JSON
+// valid, notes). For non-JSON baselines the validity flag is always true.
+func (qs *QualityScorer) ComputeQualityScore(origText, candText string) (float64, bool, []string) {
+	r := qs.Score(origText, candText)
+	return r.Score, r.CandidateJSONValid, r.Notes
+}
+
+// stripCodeFence removes a surrounding ```json ... ``` fence, which models
+// often wrap around otherwise valid JSON.
+func stripCodeFence(s string) string {
+	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") || len(s) < 6 {
+		return s
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(s, "```"), "```")
+	if nl := strings.IndexByte(inner, '\n'); nl >= 0 && !strings.ContainsAny(inner[:nl], "{[") {
+		inner = inner[nl+1:] // drop the language tag line
+	}
+	return strings.TrimSpace(inner)
 }
 
 func extractJSONKeys(s string) (bool, map[string]struct{}) {
@@ -156,24 +183,18 @@ func tokenize(s string) []string {
 	return fields
 }
 
-// ComputePercentiles calculates p50 and p95 latency values in milliseconds.
+// ComputePercentiles returns nearest-rank p50 and p95 latency values.
 func ComputePercentiles(latencies []float64) (float64, float64) {
 	if len(latencies) == 0 {
 		return 0, 0
 	}
-	sorted := make([]float64, len(latencies))
-	copy(sorted, latencies)
+	sorted := slices.Clone(latencies)
 	sort.Float64s(sorted)
+	return nearestRank(sorted, 0.50), nearestRank(sorted, 0.95)
+}
 
-	p50Idx := int(float64(len(sorted)) * 0.50)
-	p95Idx := int(float64(len(sorted)) * 0.95)
-
-	if p50Idx >= len(sorted) {
-		p50Idx = len(sorted) - 1
-	}
-	if p95Idx >= len(sorted) {
-		p95Idx = len(sorted) - 1
-	}
-
-	return sorted[p50Idx], sorted[p95Idx]
+func nearestRank(sorted []float64, p float64) float64 {
+	idx := int(math.Ceil(p*float64(len(sorted)))) - 1
+	idx = max(0, min(idx, len(sorted)-1))
+	return sorted[idx]
 }

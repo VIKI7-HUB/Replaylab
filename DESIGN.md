@@ -25,12 +25,14 @@ From `core/schemas/plugin.go`:
   - `HTTPTransportPostHook(ctx *schemas.BifrostContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error`
 
 ## 3. Chosen Architecture: Dual-Mode Embedded & Sidecar
+
+> Status: the sidecar mode (capturing proxy in `cmd/replaylab`) is implemented. Embedded mode exposes `RecordRequestWithParams`/`RecordResponse`/`InterceptHTTPRequest` for a Bifrost hook adapter, which is not yet written.
 We designed `Replay Lab` to support both native embedded execution and decoupled sidecar deployment:
 1. **Asynchronous Non-Blocking Capture**:
    - `PreLLMHook` captures request timestamp and metadata, stashing a lightweight context snapshot.
    - `PostLLMHook` records response, token counts, latency, and cost.
    - Payloads are pushed to a ring-buffered channel (`chan *CaptureRecord`).
-   - If the ring buffer fills up, incoming requests are dropped with an atomic counter `dropped_captures_total` without stalling the gateway hot path (< 10 microseconds overhead).
+   - If the ring buffer fills up, incoming requests are dropped with an atomic counter `dropped_captures_total` without stalling the gateway hot path (measured ~2.4 µs per capture; see README).
    - A dedicated worker pool performs regex PII redaction and batch SQLite commits.
 2. **Privacy-by-Design Redaction**:
    - High-throughput regex scrubbers wipe:
@@ -43,12 +45,12 @@ We designed `Replay Lab` to support both native embedded execution and decoupled
 3. **Budget-Capped Replay Engine**:
    - Reads captured prompts matching filters (model, date range, tags, sample size).
    - Re-sends prompts via HTTP client to candidate models/providers through Bifrost's OpenAI-compatible endpoint.
-   - Enforces a strict budget cap (max dollars / max tokens) checked before each batch dispatch.
+   - Enforces a strict dollar budget cap: before each replay, the projected cost is checked against the remaining budget; the run stops with partial results rather than overspend.
    - Provides dry-run cost estimation before executing.
 4. **Scoring & Recommendation Engine**:
    - Dual-tier scoring:
      - Tier 1 (Deterministic/Cheap): Response length ratio, JSON structural validity preservation, Lexical/Jaccard similarity.
-     - Tier 2 (LLM-as-a-Judge): Optional judge model evaluation with positional swap (A/B vs B/A) to cancel position bias.
+     - Tier 2 (LLM-as-a-Judge, **planned, not implemented**): judge model evaluation with positional swap (A/B vs B/A) to cancel position bias.
    - Generates automated actionable verdicts:
      - `SAFE_TO_SWITCH`: Quality preserved ($\ge 85\%$), latency stable, positive savings.
      - `SWITCH_WITH_CAUTION`: Marginal quality or latency trade-offs ($70\% \le \text{Quality} < 85\%$).

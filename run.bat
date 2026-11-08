@@ -1,18 +1,16 @@
 @echo off
-set "PATH=%PATH%;C:\Program Files\Go\bin"
-
-if "%1"=="setup" (
-    go mod download
-    go mod tidy
+REM Windows helper. Usage: run.bat [demo^|test^|bench^|mock^|traffic^|run]
+setlocal
+if "%1"=="demo" (
+    go run ./demo/run_experiment
 ) else if "%1"=="test" (
-    go test -v ./tests/...
+    go vet ./... && go test ./tests/...
 ) else if "%1"=="bench" (
-    go test -bench=BenchmarkCaptureQueueEnqueue -benchmem ./tests
+    go test -run "^$" -bench=. -benchmem ./tests
+) else if "%1"=="mock" (
+    go run ./cmd/mockprovider
 ) else if "%1"=="traffic" (
-    go run demo/generate_traffic.go
-) else if "%1"=="demo" (
-    go run demo/generate_traffic.go
-    go run demo/run_experiment.go
+    go run ./demo/generate_traffic
 ) else (
-    go run cmd/replaylab/main.go -port=8085
+    go run ./cmd/replaylab -port=8085 -gateway=http://localhost:8081
 )

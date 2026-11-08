@@ -4,105 +4,148 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
-// APIHandler dispatches REST endpoints for Replay Lab.
+// Version is reported by the health endpoint.
+const Version = "1.1.0"
+
+const (
+	maxJSONBody      = 1 << 20 // 1 MiB for API request bodies
+	sseHeartbeat     = 15 * time.Second
+	defaultListLimit = 50
+)
+
+// APIHandler serves the /replaylab REST and SSE API.
 type APIHandler struct {
-	storage Storage
-	engine  *ReplayEngine
-	queue   *CaptureQueue
-	metrics *MetricsTracker
-	config  Config
-	cfgMu   sync.RWMutex
-	mux     *http.ServeMux
+	storage   Storage
+	engine    *ReplayEngine
+	queue     *CaptureQueue
+	mux       *http.ServeMux
+	cfgMu     sync.Mutex // serialises config updates
+	startedAt time.Time
 }
 
-// NewAPIHandler sets up routing and handlers.
-func NewAPIHandler(storage Storage, engine *ReplayEngine, queue *CaptureQueue, cfg Config) *APIHandler {
+// NewAPIHandler sets up routing.
+func NewAPIHandler(storage Storage, engine *ReplayEngine, queue *CaptureQueue) *APIHandler {
 	h := &APIHandler{
-		storage: storage,
-		engine:  engine,
-		queue:   queue,
-		metrics: NewMetricsTracker(),
-		config:  cfg,
-		mux:     http.NewServeMux(),
+		storage:   storage,
+		engine:    engine,
+		queue:     queue,
+		mux:       http.NewServeMux(),
+		startedAt: time.Now(),
 	}
 	h.registerRoutes()
 	return h
 }
 
 func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Enable permissive CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
 	h.mux.ServeHTTP(w, r)
 }
 
 func (h *APIHandler) registerRoutes() {
-	h.mux.HandleFunc("/replaylab/health", h.handleHealth)
-	h.mux.HandleFunc("/replaylab/metrics", h.handleMetrics)
-	h.mux.HandleFunc("/replaylab/config", h.handleConfig)
-	h.mux.HandleFunc("/replaylab/captures", h.handleCaptures)
-	h.mux.HandleFunc("/replaylab/captures/", h.handleCaptureByID)
-	h.mux.HandleFunc("/replaylab/experiments", h.handleExperiments)
-	h.mux.HandleFunc("/replaylab/experiments/", h.handleExperimentSubroutes)
+	h.mux.HandleFunc("GET /replaylab/health", h.handleHealth)
+	h.mux.HandleFunc("GET /replaylab/metrics", h.handleMetrics)
+	h.mux.HandleFunc("GET /replaylab/config", h.handleGetConfig)
+	h.mux.HandleFunc("PUT /replaylab/config", h.handlePutConfig)
+	h.mux.HandleFunc("GET /replaylab/models", h.handleModels)
+	h.mux.HandleFunc("GET /replaylab/captures", h.handleListCaptures)
+	h.mux.HandleFunc("GET /replaylab/captures/{id}", h.handleGetCapture)
+	h.mux.HandleFunc("GET /replaylab/experiments", h.handleListExperiments)
+	h.mux.HandleFunc("POST /replaylab/experiments", h.handleCreateExperiment)
+	h.mux.HandleFunc("GET /replaylab/experiments/{id}", h.handleGetExperiment)
+	h.mux.HandleFunc("POST /replaylab/experiments/{id}/cancel", h.handleCancelExperiment)
+	h.mux.HandleFunc("GET /replaylab/experiments/{id}/report", h.handleReport)
+	h.mux.HandleFunc("GET /replaylab/experiments/{id}/events", h.handleEvents)
 }
 
 func (h *APIHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
-	count, _ := h.storage.GetCaptureCount()
-	resp := map[string]any{
-		"status":          "healthy",
-		"service":         "bifrost-replaylab",
-		"version":         "1.0.0",
-		"stored_captures": count,
+	status, httpStatus := "healthy", http.StatusOK
+	count, err := h.storage.GetCaptureCount()
+	if err != nil {
+		status, httpStatus = "degraded", http.StatusServiceUnavailable
 	}
-	writeJSON(w, http.StatusOK, resp)
+	_, dropped := h.queue.GetMetrics()
+	writeJSON(w, httpStatus, map[string]any{
+		"status":             status,
+		"service":            "bifrost-replaylab",
+		"version":            Version,
+		"uptime_seconds":     int(time.Since(h.startedAt).Seconds()),
+		"stored_captures":    count,
+		"dropped_captures":   dropped,
+		"active_experiments": h.engine.ActiveExperiments(),
+		"capture_enabled":    h.queue.Config().Enabled,
+	})
 }
 
 func (h *APIHandler) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	metricsText := h.metrics.FormatPrometheus(h.storage, h.queue)
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(metricsText))
+	_, _ = w.Write([]byte(FormatPrometheus(h.storage, h.queue, h.engine)))
 }
 
-func (h *APIHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.queue.Config())
+}
+
+// handlePutConfig merges the supplied fields into the current config, so
+// clients can send only what they want to change. Startup-only fields are
+// ignored.
+func (h *APIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	h.cfgMu.Lock()
 	defer h.cfgMu.Unlock()
 
-	if r.Method == http.MethodPut {
-		var updated Config
-		if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		h.config = updated
-		writeJSON(w, http.StatusOK, h.config)
+	current := h.queue.Config()
+	updated := current
+	if err := decodeJSON(w, r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	writeJSON(w, http.StatusOK, h.config)
+	updated.DBPath = current.DBPath
+	updated.GatewayURL = current.GatewayURL
+	updated.MaxQueueSize = current.MaxQueueSize
+	updated.WorkerCount = current.WorkerCount
+	updated.ReplayAuthToken = current.ReplayAuthToken
+	if err := updated.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.queue.UpdateConfig(updated)
+	writeJSON(w, http.StatusOK, updated)
 }
 
-func (h *APIHandler) handleCaptures(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+type modelPrice struct {
+	Model             string  `json:"model"`
+	InputPer1MTokens  float64 `json:"input_per_1m_tokens"`
+	OutputPer1MTokens float64 `json:"output_per_1m_tokens"`
+}
+
+func (h *APIHandler) handleModels(w http.ResponseWriter, r *http.Request) {
+	out := make([]modelPrice, 0, len(KnownPricing))
+	for name, p := range KnownPricing {
+		out = append(out, modelPrice{Model: name, InputPer1MTokens: p.InputPer1M, OutputPer1MTokens: p.OutputPer1M})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *APIHandler) handleListCaptures(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, offset, err := pagination(q.Get("limit"), q.Get("offset"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	q := r.URL.Query()
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	offset, _ := strconv.Atoi(q.Get("offset"))
-
 	captures, err := h.storage.GetCaptures(CaptureFilter{
 		Model:      q.Get("model"),
 		Tag:        q.Get("tag"),
@@ -111,7 +154,7 @@ func (h *APIHandler) handleCaptures(w http.ResponseWriter, r *http.Request) {
 		Offset:     offset,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if captures == nil {
@@ -120,140 +163,218 @@ func (h *APIHandler) handleCaptures(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, captures)
 }
 
-func (h *APIHandler) handleCaptureByID(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/replaylab/captures/")
-	if id == "" {
-		http.Error(w, "missing capture id", http.StatusBadRequest)
-		return
-	}
-
-	cap, err := h.storage.GetCaptureByID(id)
+func (h *APIHandler) handleGetCapture(w http.ResponseWriter, r *http.Request) {
+	c, err := h.storage.GetCaptureByID(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if cap == nil {
-		http.Error(w, "capture not found", http.StatusNotFound)
+	if c == nil {
+		writeError(w, http.StatusNotFound, "capture not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, cap)
+	writeJSON(w, http.StatusOK, c)
 }
 
-func (h *APIHandler) handleExperiments(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var req CreateExperimentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		exp, err := h.engine.StartExperiment(req)
-		if err != nil {
-			http.Error(w, "failed to start experiment: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, http.StatusAccepted, exp)
+func (h *APIHandler) handleListExperiments(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, offset, err := pagination(q.Get("limit"), q.Get("offset"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	if r.Method == http.MethodGet {
-		q := r.URL.Query()
-		limit, _ := strconv.Atoi(q.Get("limit"))
-		offset, _ := strconv.Atoi(q.Get("offset"))
-
-		experiments, err := h.storage.ListExperiments(limit, offset)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if experiments == nil {
-			experiments = []*Experiment{}
-		}
-		writeJSON(w, http.StatusOK, experiments)
+	experiments, err := h.storage.ListExperiments(limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if experiments == nil {
+		experiments = []*Experiment{}
+	}
+	writeJSON(w, http.StatusOK, experiments)
 }
 
-func (h *APIHandler) handleExperimentSubroutes(w http.ResponseWriter, r *http.Request) {
-	subpath := strings.TrimPrefix(r.URL.Path, "/replaylab/experiments/")
-	parts := strings.Split(subpath, "/")
-	expID := parts[0]
+func (h *APIHandler) handleCreateExperiment(w http.ResponseWriter, r *http.Request) {
+	var req CreateExperimentRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := req.Normalize(h.queue.Config().DefaultBudgetCap); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	exp, err := h.engine.StartExperiment(req)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	status := http.StatusAccepted
+	if exp.DryRun {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, exp)
+}
 
-	if len(parts) == 1 {
-		// GET /replaylab/experiments/{id}
-		exp, err := h.storage.GetExperiment(expID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if exp == nil {
-			http.Error(w, "experiment not found", http.StatusNotFound)
-			return
-		}
+func (h *APIHandler) loadExperiment(w http.ResponseWriter, id string) (*Experiment, bool) {
+	exp, err := h.storage.GetExperiment(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+	if exp == nil {
+		writeError(w, http.StatusNotFound, "experiment not found")
+		return nil, false
+	}
+	return exp, true
+}
+
+func (h *APIHandler) handleGetExperiment(w http.ResponseWriter, r *http.Request) {
+	if exp, ok := h.loadExperiment(w, r.PathValue("id")); ok {
 		writeJSON(w, http.StatusOK, exp)
+	}
+}
+
+func (h *APIHandler) handleCancelExperiment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	exp, ok := h.loadExperiment(w, id)
+	if !ok {
+		return
+	}
+	if IsTerminalStatus(exp.Status) {
+		writeError(w, http.StatusConflict, "experiment already "+exp.Status)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"cancelled": h.engine.CancelExperiment(id), "experiment_id": id})
+}
+
+func (h *APIHandler) handleReport(w http.ResponseWriter, r *http.Request) {
+	exp, ok := h.loadExperiment(w, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	if r.URL.Query().Get("format") == "markdown" {
+		md := exp.SummaryMarkdown
+		if md == "" {
+			md = FormatMarkdownReport(exp) // still running: render progress so far
+		}
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		_, _ = w.Write([]byte(md))
+		return
+	}
+	writeJSON(w, http.StatusOK, exp)
+}
+
+// handleEvents streams experiment progress as Server-Sent Events. The stream
+// always ends with an event whose "final" field is true.
+func (h *APIHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	rc := http.NewResponseController(w)
+
+	// Subscribe before reading state so a run finishing in between cannot
+	// leave this client waiting forever.
+	events, unsubscribe := h.engine.SubscribeEvents(id)
+	defer unsubscribe()
+
+	exp, ok := h.loadExperiment(w, id)
+	if !ok {
 		return
 	}
 
-	action := parts[1]
-	switch action {
-	case "cancel":
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		cancelled := h.engine.CancelExperiment(expID)
-		writeJSON(w, http.StatusOK, map[string]any{"cancelled": cancelled, "experiment_id": expID})
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	_ = rc.SetWriteDeadline(time.Time{}) // long-lived stream: lift the server write timeout
+	w.WriteHeader(http.StatusOK)
 
-	case "report":
-		exp, err := h.storage.GetExperiment(expID)
-		if err != nil || exp == nil {
-			http.Error(w, "experiment not found", http.StatusNotFound)
-			return
+	send := func(ev ReplayEvent) bool {
+		data, _ := json.Marshal(ev)
+		if _, err := fmt.Fprintf(w, "event: progress\ndata: %s\n\n", data); err != nil {
+			return false
 		}
-		if r.URL.Query().Get("format") == "markdown" {
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(exp.SummaryMarkdown))
+		return rc.Flush() == nil
+	}
+
+	snapshot := ReplayEvent{
+		ExperimentID:   exp.ID,
+		Status:         exp.Status,
+		CompletedCount: exp.CompletedReplays,
+		TotalCount:     exp.TotalReplays,
+		SpentDollars:   exp.SpentDollars,
+		Message:        "current state",
+		Final:          IsTerminalStatus(exp.Status),
+	}
+	if exp.TotalReplays > 0 {
+		snapshot.ProgressPercent = float64(exp.CompletedReplays) / float64(exp.TotalReplays) * 100
+	}
+	if !send(snapshot) || snapshot.Final {
+		return
+	}
+
+	heartbeat := time.NewTicker(sseHeartbeat)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
 			return
-		}
-		writeJSON(w, http.StatusOK, exp)
-
-	case "events":
-		// SSE Progress Stream
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-
-		ch := h.engine.SubscribeEvents(expID)
-		for {
-			select {
-			case <-r.Context().Done():
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil || rc.Flush() != nil {
 				return
-			case event, ok := <-ch:
-				if !ok {
-					return
-				}
-				data, _ := json.Marshal(event)
-				fmt.Fprintf(w, "data: %s\n\n", data)
-				flusher.Flush()
+			}
+		case ev, open := <-events:
+			if !open {
+				return
+			}
+			if !send(ev) || ev.Final {
+				return
 			}
 		}
-
-	default:
-		http.NotFound(w, r)
 	}
+}
+
+func pagination(limitStr, offsetStr string) (int, int, error) {
+	limit, offset := defaultListLimit, 0
+	if limitStr != "" {
+		v, err := strconv.Atoi(limitStr)
+		if err != nil || v < 1 || v > 1000 {
+			return 0, 0, fmt.Errorf("limit must be an integer between 1 and 1000")
+		}
+		limit = v
+	}
+	if offsetStr != "" {
+		v, err := strconv.Atoi(offsetStr)
+		if err != nil || v < 0 {
+			return 0, 0, fmt.Errorf("offset must be a non-negative integer")
+		}
+		offset = v
+	}
+	return limit, offset, nil
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return fmt.Errorf("invalid JSON body: %w", err)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// RoutePrefix is the path prefix served by APIHandler.
+const RoutePrefix = "/replaylab/"
+
+// IsAPIPath reports whether a path belongs to the Replay Lab API.
+func IsAPIPath(path string) bool {
+	return path == strings.TrimSuffix(RoutePrefix, "/") || strings.HasPrefix(path, RoutePrefix)
 }
