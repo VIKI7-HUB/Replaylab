@@ -23,9 +23,5 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Internal prompts & specifications
-*PROMPT*
-*prompt*.md
-
 # Loadable plugin build output
 dist/

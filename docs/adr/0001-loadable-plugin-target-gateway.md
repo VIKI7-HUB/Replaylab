@@ -8,7 +8,7 @@ bifrost-http loads native Go plugins as shared objects with Go's `plugin` packag
 
 The newest bifrost-http release is transports v1.6.11. Reading its source showed:
 
-- It requires Bifrost core **v1.7.10** and framework **v1.5.10** (not v1.12.1, as the spec assumed), on Go **1.26.5**. It has no `replace` directives, so there are none to repeat. In particular it uses upstream `mark3labs/mcp-go` v0.43.2, not the maximhq fork that core v1.15.1 needs.
+- It requires Bifrost core **v1.7.10** and framework **v1.5.10** (not v1.12.1, the framework version first assumed), on Go **1.26.5**. It has no `replace` directives, so there are none to repeat. In particular it uses upstream `mark3labs/mcp-go` v0.43.2, not the maximhq fork that core v1.15.1 needs.
 - The framework v1.5.10 loader looks up `Init(config any) error` (optional), `GetName` and `Cleanup` (required), and these optional hooks by name: `HTTPTransportPreHook`, `HTTPTransportPostHook`, `HTTPTransportStreamChunkHook`, `PreRequestHook`, `PreLLMHook` (or legacy `PreHook`), `PostLLMHook` (or `PostHook`), the MCP hooks and `Inject`. It has no pre-auth or response-headers hook.
 - **The official image can't load any plugin.** `transports/Dockerfile` links the binary with `-extldflags '-static'`, and a static binary can't `dlopen` a shared object.
 - The gateway runs plugin transport hooks only on inference routes. A request for an unknown path such as `/replaylab/health` goes to the router's 404 handler, or to the UI's catch-all route, which has no middleware. Neither reaches the plugin.
@@ -39,7 +39,7 @@ Two consequences follow from the gateway's behaviour:
 - **Drop the shared core to core v1.7.10.** SDK users would lose everything newer, so this was rejected.
 - **Target an older release whose core is closer to v1.15.1.** No released bifrost-http uses a newer core than v1.6.11 does, and any older release would have the same static-image problem.
 - **Copy the core into the loadable module at build time.** That makes two sources of truth, so it was rejected in favour of one build tag.
-- **WASM plugin.** That would avoid the lock-step entirely, but it's out of scope (see the spec).
+- **WASM plugin.** That would avoid the lock-step entirely, but it's a separate piece of work.
 
 ## Upgrading the target gateway
 

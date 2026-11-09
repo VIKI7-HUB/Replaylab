@@ -1,62 +1,56 @@
-# Bifrost Replay Lab: Design Note (Step 0)
+# Replay Lab design
 
-## 1. Existing Feature Audit
-We conducted a comprehensive audit of `maximhq/bifrost`'s codebase:
-- Checked existing plugins in `/plugins`:
-  - `compat`: OpenAI/Anthropic/Gemini wire compatibility translation.
-  - `governance`: Budget controls, rate limits, virtual key authentication.
-  - `logging` / `telemetry` / `otel`: Standard observability and structured request/response export.
-  - `mocker`: Mocking canned responses for development.
-  - `semanticcache`: Cache lookups via hash matching and vector embeddings.
-  - `routing`: Rule-based and latency/cost-based routing.
-- **Finding**: Bifrost has **no feature** for recording production traffic and replaying it against candidate models to quantify latency, cost, and quality differentials. Operators currently have to guess or manually stitch custom scripts to answer: *"Can I safely switch my route from GPT-4o to GPT-4o-mini or Claude 3.5 Haiku?"*
+This note explains why Replay Lab exists and how it's built. For usage, see the [README](README.md). For the API, see [docs/replaylab.md](docs/replaylab.md).
 
-## 2. Bifrost Plugin Hook Signatures
-From `core/schemas/plugin.go`:
-- `BasePlugin`:
-  - `GetName() string`
-  - `Cleanup() error`
-- `LLMPlugin`:
-  - `PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) error`
-  - `PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, error)`
-  - `PostLLMHook(ctx *schemas.BifrostContext, resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError, error)`
-- `HTTPTransportPlugin`:
-  - `HTTPTransportPreHook(ctx *schemas.BifrostContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error)`
-  - `HTTPTransportPostHook(ctx *schemas.BifrostContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error`
+## The gap in Bifrost
 
-## 3. Chosen Architecture: Dual-Mode Embedded & Sidecar
+Bifrost ships plugins for:
+- wire compatibility (`compat`)
+- governance: budgets, rate limits and virtual keys
+- observability: `logging`, `telemetry` and `otel`
+- mocking (`mocker`)
+- semantic caching (`semanticcache`)
+- routing
 
-> Status: both modes are implemented. Embedded: `replaylab.Plugin` implements `schemas.LLMPlugin` and `schemas.HTTPTransportPlugin` (Bifrost core v1.15.1, which added `PreRequestHook` and `HTTPTransportPreAuthHook` to the signatures below); see `plugins/replaylab/bifrost.go` and `tests/bifrost_plugin_test.go`. Sidecar: the capturing proxy in `cmd/replaylab`.
-We designed `Replay Lab` to support both native embedded execution and decoupled sidecar deployment:
-1. **Asynchronous Non-Blocking Capture**:
-   - `PreLLMHook` captures request timestamp and metadata, stashing a lightweight context snapshot.
-   - `PostLLMHook` records response, token counts, latency, and cost.
-   - Payloads are pushed to a ring-buffered channel (`chan *CaptureRecord`).
-   - If the ring buffer fills up, incoming requests are dropped with an atomic counter `dropped_captures_total` without stalling the gateway hot path (measured ~2.4 µs per capture; see README).
-   - A dedicated worker pool performs regex PII redaction and batch SQLite commits.
-2. **Privacy-by-Design Redaction**:
-   - High-throughput regex scrubbers wipe:
-     - Email addresses (`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
-     - Phone numbers (`(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}`)
-     - API Keys & Tokens (`sk-[a-zA-Z0-9]{20,}`, `tvly-[a-zA-Z0-9_-]{20,}`, Bearer tokens)
-     - Credit Card numbers (Luhn/regex)
-   - Configurable sampling rate (0.0–1.0) and virtual-key opt-in/opt-out.
-   - Configurable TTL retention policy with background auto-purge.
-3. **Budget-Capped Replay Engine**:
-   - Reads captured prompts matching filters (model, date range, tags, sample size).
-   - Re-sends prompts via HTTP client to candidate models/providers through Bifrost's OpenAI-compatible endpoint.
-   - Enforces a strict dollar budget cap: before each replay, the projected cost is checked against the remaining budget; the run stops with partial results rather than overspend.
-   - Provides dry-run cost estimation before executing.
-4. **Scoring & Recommendation Engine**:
-   - Dual-tier scoring:
-     - Tier 1 (Deterministic/Cheap): Response length ratio, JSON structural validity preservation, Lexical/Jaccard similarity.
-     - Tier 2 (LLM-as-a-Judge, opt-in per experiment via `judge`): pairwise judgement against the baseline with positional swap (A/B vs B/A) to cancel position bias. Judge calls count against the budget cap; see `docs/replaylab.md#judge`.
-   - Generates automated actionable verdicts:
-     - `SAFE_TO_SWITCH`: Quality preserved ($\ge 85\%$), latency stable, positive savings.
-     - `SWITCH_WITH_CAUTION`: Marginal quality or latency trade-offs ($70\% \le \text{Quality} < 85\%$).
-     - `DO_NOT_SWITCH`: Severe degradation ($< 70\%$) or errors detected.
-   - Calculates projected monthly savings based on observed volume.
-5. **API & UI-Ready SSE**:
-   - Exposes REST endpoints (`/replaylab/config`, `/replaylab/captures`, `/replaylab/experiments`, `/replaylab/metrics`, `/replaylab/health`).
-   - Streams live progress via Server-Sent Events (`/replaylab/experiments/{id}/events`).
-   - Returns both machine-readable JSON reports and formatted markdown tables (`?format=markdown`).
+None of them answers the question operators ask before changing a route: *"Can I move this traffic from `gpt-4o` to a cheaper model without breaking production?"* Today that takes guesswork or one-off scripts. Replay Lab answers it with the operator's own recorded traffic and a verdict per candidate.
+
+## Principles
+
+- **Never slow the gateway.** Capture is off the hot path. If the buffer is full, the capture is dropped and counted, and the request goes through untouched.
+- **Never spend more than allowed.** Every replay, and every judge call, is checked against the experiment's budget cap first. A run stops with partial results rather than overspend.
+- **Never store what shouldn't be stored.** Redaction happens before anything reaches disk, and hash-only mode stores no text at all.
+- **One core, several deployments.** Capture, replay, scoring and the API live in `plugins/replaylab`. The SDK plugin, the bifrost-http plugin and the sidecar differ only in wiring.
+
+## Components
+
+1. **Capture** (`bifrost.go`, `proxy.go`, `capture.go`, `stream.go`)
+   - In Bifrost, `PreLLMHook` stashes the chat request and `PostLLMHook` pairs it with the response or provider error. Streamed responses are reassembled from their chunks.
+   - Records go to a bounded queue drained by a small pool of SQLite writers. The sidecar proxy feeds the same queue.
+   - Sampling rate and per-virtual-key opt-in or opt-out apply at capture time.
+   - Replays carry `X-Replaylab-Replay`, so they are never captured.
+2. **Protect** (`redaction.go`)
+   - Redacts email addresses, phone numbers, card numbers and API tokens (`sk-`, `tvly-`, `ghp_`, bearer tokens) before storage.
+   - Optionally stores SHA-256 digests instead of text.
+   - Captures older than `retention_days` are purged in the background.
+3. **Replay** (`replay.go`)
+   - Replays a sample of captures against each candidate through the gateway's OpenAI-compatible endpoint, with the original parameters at temperature 0.
+   - Supports a dry run that estimates cost before spending anything.
+   - Progress is stored as the run goes. A run cut short by a shutdown is marked as interrupted on the next start.
+4. **Score** (`scoring.go`, `judge.go`)
+   - Deterministic metrics: JSON-contract preservation, lexical similarity, length ratio, latency (p50 and p95), error rate and cost.
+   - Optionally, an LLM judge compares each replay with the baseline in both orders, which cancels position bias. Judge calls count against the budget.
+5. **Recommend** (`recommender.go`)
+   - Gives each candidate `SAFE_TO_SWITCH`, `SWITCH_WITH_CAUTION` or `DO_NOT_SWITCH`.
+   - Projects monthly savings from the observed traffic rate.
+   - Every threshold is a named constant in this one file. For example, quality ≥ 85 is safe, 70 to 85 means caution, and an error rate above 5% means don't switch.
+6. **Serve** (`api.go`, `metrics.go`)
+   - A REST API covering health, config, captures, experiments and reports (JSON or Markdown).
+   - Live progress over SSE, and Prometheus metrics.
+
+## Deployment modes
+
+| Mode | Wiring | Notes |
+| :--- | :--- | :--- |
+| SDK plugin | `replaylab.NewPlugin` registered in `LLMPlugins` | Built against Bifrost core v1.15.1 |
+| bifrost-http plugin | `loadable/`, a shared object loaded from the gateway config | Pinned to one gateway release; see [ADR-0001](docs/adr/0001-loadable-plugin-target-gateway.md) |
+| Sidecar | `cmd/replaylab`, a capturing proxy | Works in front of any OpenAI-compatible gateway |

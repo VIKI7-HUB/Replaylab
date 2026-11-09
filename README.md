@@ -136,6 +136,21 @@ go test ./tests/...
 
 The tests cover redaction, scoring, recommendations, budget-cap enforcement, upstream failures, proxy capture, SSE termination, config updates and pricing lookup. [tests/bifrost_plugin_test.go](tests/bifrost_plugin_test.go) runs the real Bifrost core with the plugin registered: it checks capture and redaction, provider errors, replay skipping, and the API served via the transport hook, then runs a full capture-to-verdict experiment. [tests/stream_capture_test.go](tests/stream_capture_test.go) and [tests/proxy_stream_test.go](tests/proxy_stream_test.go) cover streamed capture through Bifrost and through the proxy: reassembly, usage and estimated usage, mid-stream errors, abandonment, truncation, the `streamed` filter and replaying streamed captures to a verdict. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) also runs them under the race detector. On Linux, CI also builds the loadable plugin and runs the gateway smoke test ([loadable/smoketest](loadable/smoketest/main.go)), which loads it into the real bifrost-http release and checks capture, redaction, verdicts, replay skipping, restart survival and config errors over HTTP only. Locally: `make loadable-smoke` (needs Docker).
 
+## Repository layout
+
+| Path | What's there |
+| :--- | :--- |
+| `plugins/replaylab/` | The core, shared by every deployment mode: capture, redaction, storage, replay, scoring, judge, recommendations and the API |
+| `cmd/replaylab/`, `cmd/mockprovider/` | The sidecar proxy, and the deterministic OpenAI-compatible mock used by the demos and tests |
+| `internal/mockprovider/` | The mock's model tiers and behaviours |
+| `loadable/` | The bifrost-http plugin: entry point, pinned module, container build, gateway smoke test and the one-command demo ([README](loadable/README.md)) |
+| `demo/` | Runnable demos (`bifrost_embedded`, `run_experiment`, `generate_traffic`), sample prompts and a Postman collection |
+| `tests/` | Unit tests, real-Bifrost plugin tests and end-to-end experiment tests |
+| `docs/` | The API reference ([replaylab.md](docs/replaylab.md)) and the architecture decision record for the gateway plugin ([adr/](docs/adr/)) |
+| `DESIGN.md` | Why Replay Lab exists and how it's built |
+| `docker-compose.yml`, `Dockerfile.*` | The sidecar demo: the mock provider and Replay Lab in containers |
+| `Makefile`, `run.bat` | Shortcuts for building, testing and the demos (`run.bat` on Windows) |
+
 ## Limitations
 
 - **Without a judge, quality is a similarity score, not a semantic judgement.** A candidate that answers correctly in different words scores lower than one that paraphrases closely. Set `judge` on an experiment to have a judge model compare each replay with the baseline in both orders (see [docs/replaylab.md](docs/replaylab.md#judge)); judge thresholds are not yet calibrated against human labels.
