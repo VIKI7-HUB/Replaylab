@@ -18,9 +18,12 @@ type CaptureFilter struct {
 	Limit      int
 	Offset     int
 	Since      *time.Time
-	// Replayable restricts results to successful, non-hashed captures,
-	// i.e. the ones that can be meaningfully replayed and scored.
+	// Replayable restricts results to successful, non-hashed, complete
+	// captures, i.e. the ones that can be meaningfully replayed and scored.
 	Replayable bool
+	// Streamed, when set, keeps only streamed (true) or only non-streamed
+	// (false) captures. Nil matches both.
+	Streamed *bool
 }
 
 // TrafficVolume summarises how much traffic was captured for a model.
@@ -112,7 +115,10 @@ func (s *SQLiteStorage) initSchema() error {
 			error_message TEXT,
 			is_streaming BOOLEAN,
 			tag TEXT,
-			hash_only BOOLEAN
+			hash_only BOOLEAN,
+			completion_state TEXT,
+			time_to_first_token_ms INTEGER,
+			usage_estimated BOOLEAN
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_captures_timestamp ON captures(timestamp DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_captures_model ON captures(model);`,
@@ -134,7 +140,80 @@ func (s *SQLiteStorage) initSchema() error {
 			return fmt.Errorf("schema initialization failed on query [%s]: %w", q, err)
 		}
 	}
+	return s.addMissingCaptureColumns()
+}
+
+// addMissingCaptureColumns upgrades databases created before streamed
+// capture. Old rows get NULLs, which read back as a complete, non-estimated
+// capture.
+func (s *SQLiteStorage) addMissingCaptureColumns() error {
+	rows, err := s.db.Query("PRAGMA table_info(captures)")
+	if err != nil {
+		return fmt.Errorf("reading captures schema: %w", err)
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid, notNull, pk int
+			name, typ        string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("reading captures schema: %w", err)
+		}
+		have[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reading captures schema: %w", err)
+	}
+	for _, col := range []struct{ name, typ string }{
+		{"completion_state", "TEXT"},
+		{"time_to_first_token_ms", "INTEGER"},
+		{"usage_estimated", "BOOLEAN"},
+	} {
+		if have[col.name] {
+			continue
+		}
+		if _, err := s.db.Exec("ALTER TABLE captures ADD COLUMN " + col.name + " " + col.typ); err != nil {
+			return fmt.Errorf("adding captures.%s: %w", col.name, err)
+		}
+	}
 	return nil
+}
+
+// captureColumns is the SELECT list scanCapture reads, in order.
+const captureColumns = `id, request_id, timestamp, virtual_key, tenant, provider, model,
+	       messages_json, params_json, response_json, prompt_tokens, completion_tokens,
+	       total_tokens, latency_ms, cost_estimate, status_code, error_message,
+	       is_streaming, tag, hash_only,
+	       COALESCE(completion_state, 'complete'), time_to_first_token_ms, COALESCE(usage_estimated, 0)`
+
+type rowScanner interface{ Scan(dest ...any) error }
+
+func scanCapture(row rowScanner) (*CaptureRecord, error) {
+	r := &CaptureRecord{}
+	var (
+		ts   time.Time
+		ttft sql.NullInt64
+	)
+	err := row.Scan(
+		&r.ID, &r.RequestID, &ts, &r.VirtualKey, &r.Tenant, &r.Provider, &r.Model,
+		&r.MessagesJSON, &r.ParamsJSON, &r.ResponseJSON, &r.PromptTokens, &r.CompletionTokens,
+		&r.TotalTokens, &r.LatencyMs, &r.CostEstimate, &r.StatusCode, &r.ErrorMessage,
+		&r.IsStreaming, &r.Tag, &r.HashOnly,
+		&r.CompletionState, &ttft, &r.UsageEstimated,
+	)
+	if err != nil {
+		return nil, err
+	}
+	r.Timestamp = ts
+	if ttft.Valid {
+		v := ttft.Int64
+		r.TimeToFirstTokenMs = &v
+	}
+	return r, nil
 }
 
 // SaveCapture inserts a single record.
@@ -159,8 +238,8 @@ func (s *SQLiteStorage) SaveCapturesBatch(records []*CaptureRecord) error {
 			id, request_id, timestamp, virtual_key, tenant, provider, model,
 			messages_json, params_json, response_json, prompt_tokens, completion_tokens,
 			total_tokens, latency_ms, cost_estimate, status_code, error_message,
-			is_streaming, tag, hash_only
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			is_streaming, tag, hash_only, completion_state, time_to_first_token_ms, usage_estimated
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -168,11 +247,19 @@ func (s *SQLiteStorage) SaveCapturesBatch(records []*CaptureRecord) error {
 	defer stmt.Close()
 
 	for _, r := range records {
+		state := r.CompletionState
+		if state == "" {
+			state = CompletionStateComplete
+		}
+		var ttft any
+		if r.TimeToFirstTokenMs != nil {
+			ttft = *r.TimeToFirstTokenMs
+		}
 		_, err := stmt.Exec(
 			r.ID, r.RequestID, r.Timestamp.UTC(), r.VirtualKey, r.Tenant, r.Provider, r.Model,
 			r.MessagesJSON, r.ParamsJSON, r.ResponseJSON, r.PromptTokens, r.CompletionTokens,
 			r.TotalTokens, r.LatencyMs, r.CostEstimate, r.StatusCode, r.ErrorMessage,
-			r.IsStreaming, r.Tag, r.HashOnly,
+			r.IsStreaming, r.Tag, r.HashOnly, state, ttft, r.UsageEstimated,
 		)
 		if err != nil {
 			return err
@@ -202,17 +289,16 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 		conditions = append(conditions, "timestamp >= ?")
 		args = append(args, filter.Since.UTC())
 	}
+	if filter.Streamed != nil {
+		conditions = append(conditions, "COALESCE(is_streaming, 0) = ?")
+		args = append(args, *filter.Streamed)
+	}
 	if filter.Replayable {
-		conditions = append(conditions, "status_code BETWEEN 200 AND 299", "hash_only = 0")
+		conditions = append(conditions, "status_code BETWEEN 200 AND 299", "hash_only = 0",
+			"COALESCE(completion_state, 'complete') = 'complete'")
 	}
 
-	query := `
-		SELECT id, request_id, timestamp, virtual_key, tenant, provider, model,
-		       messages_json, params_json, response_json, prompt_tokens, completion_tokens,
-		       total_tokens, latency_ms, cost_estimate, status_code, error_message,
-		       is_streaming, tag, hash_only
-		FROM captures
-	`
+	query := "SELECT " + captureColumns + " FROM captures"
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -234,18 +320,10 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 
 	var records []*CaptureRecord
 	for rows.Next() {
-		r := &CaptureRecord{}
-		var ts time.Time
-		err := rows.Scan(
-			&r.ID, &r.RequestID, &ts, &r.VirtualKey, &r.Tenant, &r.Provider, &r.Model,
-			&r.MessagesJSON, &r.ParamsJSON, &r.ResponseJSON, &r.PromptTokens, &r.CompletionTokens,
-			&r.TotalTokens, &r.LatencyMs, &r.CostEstimate, &r.StatusCode, &r.ErrorMessage,
-			&r.IsStreaming, &r.Tag, &r.HashOnly,
-		)
+		r, err := scanCapture(rows)
 		if err != nil {
 			return nil, err
 		}
-		r.Timestamp = ts
 		records = append(records, r)
 	}
 	return records, rows.Err()
@@ -253,29 +331,13 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 
 // GetCaptureByID retrieves a specific record.
 func (s *SQLiteStorage) GetCaptureByID(id string) (*CaptureRecord, error) {
-	row := s.db.QueryRow(`
-		SELECT id, request_id, timestamp, virtual_key, tenant, provider, model,
-		       messages_json, params_json, response_json, prompt_tokens, completion_tokens,
-		       total_tokens, latency_ms, cost_estimate, status_code, error_message,
-		       is_streaming, tag, hash_only
-		FROM captures WHERE id = ?
-	`, id)
-
-	r := &CaptureRecord{}
-	var ts time.Time
-	err := row.Scan(
-		&r.ID, &r.RequestID, &ts, &r.VirtualKey, &r.Tenant, &r.Provider, &r.Model,
-		&r.MessagesJSON, &r.ParamsJSON, &r.ResponseJSON, &r.PromptTokens, &r.CompletionTokens,
-		&r.TotalTokens, &r.LatencyMs, &r.CostEstimate, &r.StatusCode, &r.ErrorMessage,
-		&r.IsStreaming, &r.Tag, &r.HashOnly,
-	)
+	r, err := scanCapture(s.db.QueryRow("SELECT "+captureColumns+" FROM captures WHERE id = ?", id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	r.Timestamp = ts
 	return r, nil
 }
 
@@ -333,6 +395,51 @@ func (s *SQLiteStorage) SaveExperiment(exp *Experiment) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, exp.ID, exp.Name, exp.Status, exp.OriginalModel, string(dataBytes), exp.CreatedAt.UTC(), completedAt)
 	return err
+}
+
+// InterruptedStopReason is the stop reason given to experiments that were
+// still pending or running when the previous process stopped.
+const InterruptedStopReason = "interrupted: Replay Lab stopped before the run finished; partial results kept"
+
+// FailInterruptedExperiments marks every pending or running experiment as
+// failed with InterruptedStopReason, keeping its partial progress, and
+// returns how many it marked. Runs live in memory, so at startup any such
+// experiment belongs to a process that is gone and would otherwise stay
+// "running" forever. Call it only before this process starts experiments.
+func (s *SQLiteStorage) FailInterruptedExperiments(now time.Time) (int, error) {
+	rows, err := s.db.Query("SELECT data_json FROM experiments WHERE status IN (?, ?)", StatusPending, StatusRunning)
+	if err != nil {
+		return 0, err
+	}
+	var stale []*Experiment
+	for rows.Next() {
+		var dataStr string
+		if err := rows.Scan(&dataStr); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		var exp Experiment
+		if err := json.Unmarshal([]byte(dataStr), &exp); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("corrupt experiment record: %w", err)
+		}
+		stale = append(stale, &exp)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	now = now.UTC()
+	for _, exp := range stale {
+		exp.Status = StatusFailed
+		exp.StopReason = InterruptedStopReason
+		exp.CompletedAt = &now
+		if err := s.SaveExperiment(exp); err != nil {
+			return 0, err
+		}
+	}
+	return len(stale), nil
 }
 
 // GetExperiment retrieves an experiment by ID.

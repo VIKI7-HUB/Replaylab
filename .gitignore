@@ -26,3 +26,6 @@ Thumbs.db
 # Internal prompts & specifications
 *PROMPT*
 *prompt*.md
+
+# Loadable plugin build output
+dist/

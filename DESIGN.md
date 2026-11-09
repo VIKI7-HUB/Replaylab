@@ -50,7 +50,7 @@ We designed `Replay Lab` to support both native embedded execution and decoupled
 4. **Scoring & Recommendation Engine**:
    - Dual-tier scoring:
      - Tier 1 (Deterministic/Cheap): Response length ratio, JSON structural validity preservation, Lexical/Jaccard similarity.
-     - Tier 2 (LLM-as-a-Judge, **planned, not implemented**): judge model evaluation with positional swap (A/B vs B/A) to cancel position bias.
+     - Tier 2 (LLM-as-a-Judge, opt-in per experiment via `judge`): pairwise judgement against the baseline with positional swap (A/B vs B/A) to cancel position bias. Judge calls count against the budget cap; see `docs/replaylab.md#judge`.
    - Generates automated actionable verdicts:
      - `SAFE_TO_SWITCH`: Quality preserved ($\ge 85\%$), latency stable, positive savings.
      - `SWITCH_WITH_CAUTION`: Marginal quality or latency trade-offs ($70\% \le \text{Quality} < 85\%$).

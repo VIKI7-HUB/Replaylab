@@ -8,7 +8,7 @@ if "%1"=="bifrost" (
 ) else if "%1"=="test" (
     go vet ./... && go test ./tests/...
 ) else if "%1"=="bench" (
-    go test -run "^$" -bench=. -benchmem ./tests
+    go test -run "^$" -bench=. -benchmem ./tests ./plugins/replaylab
 ) else if "%1"=="mock" (
     go run ./cmd/mockprovider
 ) else if "%1"=="traffic" (

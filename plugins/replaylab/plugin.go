@@ -34,6 +34,8 @@ type PendingCaptureContext struct {
 	MessagesJSON string
 	ParamsJSON   string
 	Tag          string
+
+	stream *streamCapture // set for streamed captures
 }
 
 // Plugin wires capture, replay and the REST API together. Inside Bifrost it
@@ -63,6 +65,12 @@ func NewPlugin(cfg Config) (*Plugin, error) {
 	storage, err := NewSQLiteStorage(cfg.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize replaylab storage: %w", err)
+	}
+	if n, err := storage.FailInterruptedExperiments(time.Now()); err != nil {
+		storage.Close()
+		return nil, fmt.Errorf("failed to close out interrupted experiments: %w", err)
+	} else if n > 0 {
+		log.Printf("replaylab: marked %d experiment(s) interrupted by the last shutdown as failed", n)
 	}
 
 	queue := NewCaptureQueue(cfg, storage)
@@ -197,6 +205,7 @@ func (p *Plugin) RecordResponse(reqID string, responseContent string, promptToke
 		ErrorMessage:     errMsg,
 		IsStreaming:      isStreaming,
 		Tag:              pending.Tag,
+		CompletionState:  CompletionStateComplete,
 	})
 }
 
@@ -244,9 +253,20 @@ func (p *Plugin) janitor() {
 	}
 }
 
+// evictStalePending drops requests that never got a response. A stream that
+// never ended is stored as abandoned rather than dropped.
 func (p *Plugin) evictStalePending(cutoff time.Time) {
 	p.pendingMap.Range(func(key, val any) bool {
-		if val.(*PendingCaptureContext).StartTime.Before(cutoff) {
+		pending := val.(*PendingCaptureContext)
+		if !pending.StartTime.Before(cutoff) {
+			return true
+		}
+		if pending.stream != nil {
+			p.FinishStream(key.(string), StreamOutcome{
+				State:        CompletionStateAbandoned,
+				ErrorMessage: "stream never ended",
+			})
+		} else {
 			p.pendingMap.Delete(key)
 		}
 		return true

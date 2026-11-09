@@ -7,6 +7,8 @@
 //
 //	go run ./demo/run_experiment
 //	go run ./demo/run_experiment -requests 300 -sample 80 -candidates gpt-4o-mini,claude-3-haiku,meta-llama-3.1-8b
+//	go run ./demo/run_experiment -judge                      # score replays with the mock LLM judge
+//	go run ./demo/run_experiment -judge -judge-model judge-biased
 package main
 
 import (
@@ -42,6 +44,8 @@ func main() {
 	dbPath := flag.String("db", "", "SQLite path (default: temporary file)")
 	prompts := flag.String("prompts", "demo/sample_prompts.json", "prompt templates file")
 	latency := flag.Float64("latency", 0.25, "mock latency scale (1 = realistic)")
+	judge := flag.Bool("judge", false, "judge each replay against the baseline with a mock judge model")
+	judgeModel := flag.String("judge-model", "judge-mock", "judge model used with -judge (names containing \"biased\" always pick position A)")
 	flag.Parse()
 
 	templates, err := loadTemplates(*prompts)
@@ -79,14 +83,20 @@ func main() {
 	waitForCaptures(plugin, *requests)
 
 	cands := strings.Split(*candidates, ",")
-	fmt.Printf("2) Replaying %d captures against %v with a $%.2f hard cap...\n", *sample, cands, *budget)
-	exp, err := plugin.Engine().StartExperiment(replaylab.CreateExperimentRequest{
+	req := replaylab.CreateExperimentRequest{
 		Name:             "Production cost optimization trial",
 		OriginalModel:    *baseline,
 		CandidateModels:  cands,
 		SampleSize:       *sample,
 		BudgetCapDollars: *budget,
-	})
+	}
+	if *judge {
+		req.Judge = &replaylab.JudgeConfig{Model: *judgeModel}
+		fmt.Printf("2) Replaying %d captures against %v, judged by %s, with a $%.2f hard cap...\n", *sample, cands, *judgeModel, *budget)
+	} else {
+		fmt.Printf("2) Replaying %d captures against %v with a $%.2f hard cap...\n", *sample, cands, *budget)
+	}
+	exp, err := plugin.Engine().StartExperiment(req)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -94,8 +104,12 @@ func main() {
 	events, unsubscribe := plugin.Engine().SubscribeEvents(exp.ID)
 	defer unsubscribe()
 	for ev := range events {
-		fmt.Printf("\r   [%3.0f%%] %d/%d replays | spent $%.4f | %-20s",
-			ev.ProgressPercent, ev.CompletedCount, ev.TotalCount, ev.SpentDollars, ev.CandidateModel)
+		judgeCol := ""
+		if ev.CurrentJudgeScore != nil {
+			judgeCol = fmt.Sprintf(" | judge %5.1f", *ev.CurrentJudgeScore)
+		}
+		fmt.Printf("\r   [%3.0f%%] %d/%d replays | spent $%.4f%s | %-20s",
+			ev.ProgressPercent, ev.CompletedCount, ev.TotalCount, ev.SpentDollars, judgeCol, ev.CandidateModel)
 		if ev.Final {
 			fmt.Printf("\n   %s\n", ev.Message)
 			break

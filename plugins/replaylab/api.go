@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +29,16 @@ type APIHandler struct {
 	mux       *http.ServeMux
 	cfgMu     sync.Mutex // serialises config updates
 	startedAt time.Time
+
+	// targetGateway is the bifrost-http release a loadable plugin build was
+	// pinned to; nil outside that deployment mode.
+	targetGateway atomic.Pointer[string]
+}
+
+// SetTargetGatewayVersion records the bifrost-http release this build was
+// pinned to, so the health response can report it.
+func (h *APIHandler) SetTargetGatewayVersion(v string) {
+	h.targetGateway.Store(&v)
 }
 
 // NewAPIHandler sets up routing.
@@ -77,7 +88,7 @@ func (h *APIHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		status, httpStatus = "degraded", http.StatusServiceUnavailable
 	}
 	_, dropped := h.queue.GetMetrics()
-	writeJSON(w, httpStatus, map[string]any{
+	body := map[string]any{
 		"status":             status,
 		"service":            "bifrost-replaylab",
 		"version":            Version,
@@ -86,7 +97,11 @@ func (h *APIHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"dropped_captures":   dropped,
 		"active_experiments": h.engine.ActiveExperiments(),
 		"capture_enabled":    h.queue.Config().Enabled,
-	})
+	}
+	if v := h.targetGateway.Load(); v != nil {
+		body["target_gateway_version"] = *v
+	}
+	writeJSON(w, httpStatus, body)
 }
 
 func (h *APIHandler) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +162,13 @@ func (h *APIHandler) handleListCaptures(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	streamed, err := parseStreamedFilter(q.Get("streamed"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	captures, err := h.storage.GetCaptures(CaptureFilter{
+		Streamed:   streamed,
 		Model:      q.Get("model"),
 		Tag:        q.Get("tag"),
 		VirtualKey: q.Get("virtual_key"),
@@ -378,4 +399,20 @@ const RoutePrefix = "/replaylab/"
 // IsAPIPath reports whether a path belongs to the Replay Lab API.
 func IsAPIPath(path string) bool {
 	return path == strings.TrimSuffix(RoutePrefix, "/") || strings.HasPrefix(path, RoutePrefix)
+}
+
+// parseStreamedFilter reads the "streamed" query parameter: "true" or "false",
+// or empty (or "any") for both.
+func parseStreamedFilter(v string) (*bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "any":
+		return nil, nil
+	case "true":
+		t := true
+		return &t, nil
+	case "false":
+		f := false
+		return &f, nil
+	}
+	return nil, fmt.Errorf("streamed must be true, false or any")
 }

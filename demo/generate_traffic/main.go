@@ -1,6 +1,8 @@
 // Command generate_traffic sends realistic chat traffic through a running
 // Replay Lab proxy so the server has captures to experiment on (useful for
-// frontend development against a live API).
+// frontend development against a live API). About a third of the requests
+// are streamed; half of those ask for a usage chunk, so the rest show
+// estimated token counts.
 //
 //	docker compose up -d        # or: run.bat mock + run.bat
 //	go run ./demo/generate_traffic -n 200
@@ -32,6 +34,7 @@ func main() {
 	model := flag.String("model", "gpt-4o", "baseline model")
 	prompts := flag.String("prompts", "demo/sample_prompts.json", "prompt templates file")
 	concurrency := flag.Int("c", 16, "concurrent requests")
+	streamEvery := flag.Int("stream-every", 3, "stream every Nth request (0 = never)")
 	flag.Parse()
 
 	b, err := os.ReadFile(*prompts)
@@ -45,7 +48,7 @@ func main() {
 
 	url := *proxy + "/v1/chat/completions"
 	client := &http.Client{Timeout: 60 * time.Second}
-	var ok, failed atomic.Int64
+	var ok, failed, streamed atomic.Int64
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, max(1, *concurrency))
 	start := time.Now()
@@ -63,11 +66,18 @@ func main() {
 		if t.ExpectedFormat == "json" {
 			body["response_format"] = map[string]string{"type": "json_object"}
 		}
+		stream := *streamEvery > 0 && i%*streamEvery == *streamEvery-1
+		if stream {
+			body["stream"] = true
+			if (i / *streamEvery)%2 == 0 {
+				body["stream_options"] = map[string]bool{"include_usage": true}
+			}
+		}
 		payload, _ := json.Marshal(body)
 
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(tag string) {
+		go func(tag string, stream bool) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
@@ -83,14 +93,17 @@ func main() {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				ok.Add(1)
+				if stream {
+					streamed.Add(1)
+				}
 			} else {
 				failed.Add(1)
 			}
-		}(t.Category)
+		}(t.Category, stream)
 	}
 	wg.Wait()
 
-	log.Printf("sent %d requests in %s: %d ok, %d failed", *n, time.Since(start).Round(time.Millisecond), ok.Load(), failed.Load())
+	log.Printf("sent %d requests in %s: %d ok (%d streamed), %d failed", *n, time.Since(start).Round(time.Millisecond), ok.Load(), streamed.Load(), failed.Load())
 	if failed.Load() > 0 && ok.Load() == 0 {
 		log.Fatalf("no request succeeded; is Replay Lab running at %s with a reachable gateway?", *proxy)
 	}

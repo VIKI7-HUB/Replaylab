@@ -26,9 +26,12 @@ type ReplayEvent struct {
 	TotalCount      int     `json:"total_count"`
 	ProgressPercent float64 `json:"progress_percent"`
 	CurrentQuality  float64 `json:"current_quality"`
-	SpentDollars    float64 `json:"spent_dollars"`
-	Message         string  `json:"message"`
-	Final           bool    `json:"final"`
+	// CurrentJudgeScore is the running judge score of the current candidate,
+	// omitted until one of its replays has been judged.
+	CurrentJudgeScore *float64 `json:"current_judge_score,omitempty"`
+	SpentDollars      float64  `json:"spent_dollars"`
+	Message           string   `json:"message"`
+	Final             bool     `json:"final"`
 }
 
 const (
@@ -172,6 +175,7 @@ func (re *ReplayEngine) selectCaptures(req CreateExperimentRequest) ([]*CaptureR
 	captures, err := re.storage.GetCaptures(CaptureFilter{
 		Model:      req.OriginalModel,
 		Tag:        req.FilterTag,
+		Streamed:   req.Streamed,
 		Limit:      req.SampleSize,
 		Replayable: true,
 	})
@@ -200,6 +204,7 @@ func (re *ReplayEngine) newExperiment(req CreateExperimentRequest, captures []*C
 		OriginalModel:        origModel,
 		CandidateModels:      req.CandidateModels,
 		FilterTag:            req.FilterTag,
+		Streamed:             req.Streamed,
 		SampleSize:           len(captures),
 		BudgetCapDollars:     req.BudgetCapDollars,
 		FixedTemperature:     req.FixedTemperature,
@@ -207,8 +212,15 @@ func (re *ReplayEngine) newExperiment(req CreateExperimentRequest, captures []*C
 		CreatedAt:            time.Now().UTC(),
 		TotalReplays:         len(captures) * len(req.CandidateModels),
 		MonthlyRequestVolume: req.MonthlyRequestVolume,
+		Judge:                req.Judge,
 		Results:              []ExperimentResult{},
 		Recommendations:      []SwitchRecommendation{},
+	}
+	if req.Judge != nil {
+		judge := *req.Judge
+		exp.Judge = &judge
+		_, known := LookupPricing(judge.Model)
+		exp.JudgePriceEstimated = !known
 	}
 	if exp.MonthlyRequestVolume == 0 {
 		if vol, err := re.storage.GetTrafficVolume(origModel); err == nil {
@@ -228,13 +240,20 @@ func (re *ReplayEngine) EstimateDryRun(req CreateExperimentRequest) (*Experiment
 	exp := re.newExperiment(req, captures)
 	exp.DryRun = true
 
-	var estimated float64
+	var replayCost, judgeCost float64
 	for _, cand := range req.CandidateModels {
-		for _, c := range captures {
-			estimated += EstimateCost(cand, c.PromptTokens, c.CompletionTokens)
+		for i, c := range captures {
+			replayCost += EstimateCost(cand, c.PromptTokens, c.CompletionTokens)
+			if req.Judge != nil && (req.Judge.MaxJudgeSamples <= 0 || i < req.Judge.MaxJudgeSamples) {
+				judgeCost += projectedJudgeCost(req.Judge.Model, c)
+			}
 		}
 	}
+	estimated := replayCost + judgeCost
 	exp.SpentDollars = estimated
+	if req.Judge != nil {
+		exp.EstimatedReplayDollars, exp.EstimatedJudgeDollars = &replayCost, &judgeCost
+	}
 	if estimated > exp.BudgetCapDollars {
 		exp.StopReason = fmt.Sprintf("estimated cost $%.4f exceeds budget cap $%.2f; the run would stop early", estimated, exp.BudgetCapDollars)
 	}
@@ -287,6 +306,80 @@ type candidateRun struct {
 	origCost       float64
 	candCost       float64
 	lastErrMessage string
+
+	judged        bool // the experiment has a judge
+	judgeAttempts int  // successful replays sent to the judge (for max_judge_samples)
+	judgedReplays int
+	judgeScoreSum float64
+	judgeWins     int
+	judgeTies     int
+	judgeLosses   int
+	disagreements int
+	judgeCost     float64
+	judgeSamples  []JudgementSample
+}
+
+// wantsJudge reports whether the next successful replay should be judged.
+func (c *candidateRun) wantsJudge(cfg *JudgeConfig) bool {
+	return cfg != nil && (cfg.MaxJudgeSamples <= 0 || c.judgeAttempts < cfg.MaxJudgeSamples)
+}
+
+// runningJudgeScore is the mean judge score so far, or nil before any judgement.
+func (c *candidateRun) runningJudgeScore() *float64 {
+	if c.judgedReplays == 0 {
+		return nil
+	}
+	s := c.judgeScoreSum / float64(c.judgedReplays)
+	return &s
+}
+
+func (c *candidateRun) addJudgement(j replayJudgement, capture *CaptureRecord, candidate string) {
+	c.judgeAttempts++
+	c.judgeCost += j.cost
+	if !j.ok {
+		return
+	}
+	if len(c.judgeSamples) < MaxStoredJudgements {
+		c.judgeSamples = append(c.judgeSamples, j.sample(capture, candidate))
+	}
+	c.judgedReplays++
+	c.judgeScoreSum += j.score()
+	for _, o := range j.outcomes {
+		switch o {
+		case judgeWin:
+			c.judgeWins++
+		case judgeTie:
+			c.judgeTies++
+		default:
+			c.judgeLosses++
+		}
+	}
+	if j.selfDisagreement() {
+		c.disagreements++
+	}
+}
+
+// fillJudge sets the judge fields of a result; it leaves them nil when the
+// experiment has no judge.
+func (c *candidateRun) fillJudge(res *ExperimentResult) {
+	if !c.judged {
+		return
+	}
+	wins, ties, losses := c.judgeWins, c.judgeTies, c.judgeLosses
+	res.JudgeWins, res.JudgeTies, res.JudgeLosses = &wins, &ties, &losses
+	coverage := 0.0
+	if c.successful > 0 {
+		coverage = float64(c.judgedReplays) / float64(c.successful) * 100.0
+	}
+	res.JudgeCoverage = &coverage
+	spent := c.judgeCost
+	res.JudgeSpentDollars = &spent
+	res.JudgeSamples = c.judgeSamples
+	if c.judgedReplays > 0 {
+		score := c.judgeScoreSum / float64(c.judgedReplays)
+		disagreement := float64(c.disagreements) / float64(c.judgedReplays) * 100.0
+		res.JudgeScore, res.JudgeDisagreementRate = &score, &disagreement
+	}
 }
 
 func (c *candidateRun) avgQuality() float64 {
@@ -308,6 +401,7 @@ func (c *candidateRun) result() ExperimentResult {
 	if c.attempted > 0 {
 		res.ErrorRate = float64(c.failed) / float64(c.attempted) * 100.0
 	}
+	c.fillJudge(&res)
 	if c.successful == 0 {
 		res.AvgQualityScore = 0
 		return res
@@ -360,7 +454,7 @@ func (re *ReplayEngine) run(ctx context.Context, exp *Experiment, captures []*Ca
 	runs := make([]*candidateRun, 0, len(exp.CandidateModels))
 
 	for _, model := range exp.CandidateModels {
-		run := &candidateRun{model: model}
+		run := &candidateRun{model: model, judged: exp.Judge != nil}
 		runs = append(runs, run)
 
 		for _, c := range captures {
@@ -372,14 +466,18 @@ func (re *ReplayEngine) run(ctx context.Context, exp *Experiment, captures []*Ca
 			}
 
 			// Hard budget cap: refuse any replay whose estimated cost
-			// (assuming baseline-sized token usage) would cross the cap.
+			// (assuming baseline-sized token usage, plus both judge calls when
+			// judging) would cross the cap.
+			judgeThis := run.wantsJudge(exp.Judge)
 			projected := EstimateCost(model, c.PromptTokens, c.CompletionTokens)
+			if judgeThis {
+				projected += projectedJudgeCost(exp.Judge.Model, c)
+			}
 			if exp.SpentDollars+projected > exp.BudgetCapDollars {
-				exp.Status = StatusBudgetExhausted
-				exp.StopReason = fmt.Sprintf("stopped before exceeding the $%.2f budget cap (spent $%.4f)", exp.BudgetCapDollars, exp.SpentDollars)
-				re.finalize(exp, runs)
+				re.stopForBudget(exp, runs)
 				return
 			}
+			judgeBudgetHit := false
 
 			out := re.replayOne(ctx, model, c, exp.FixedTemperature)
 			if out.err != nil && ctx.Err() != nil {
@@ -409,19 +507,34 @@ func (re *ReplayEngine) run(ctx context.Context, exp *Experiment, captures []*Ca
 				run.candCost += out.cost
 				exp.SpentDollars += out.cost
 				exp.SpentTokens += out.tokens
+
+				if judgeThis {
+					j := re.judgeReplay(ctx, exp.Judge, c, out.content, exp.BudgetCapDollars-exp.SpentDollars)
+					run.addJudgement(j, c, out.content)
+					exp.SpentDollars += j.cost
+					exp.SpentTokens += j.tokens
+					judgeBudgetHit = j.budgetHit
+				}
 			}
 
 			re.broadcast(ReplayEvent{
-				ExperimentID:    exp.ID,
-				Status:          exp.Status,
-				CandidateModel:  model,
-				CompletedCount:  exp.CompletedReplays,
-				TotalCount:      exp.TotalReplays,
-				ProgressPercent: float64(exp.CompletedReplays) / float64(exp.TotalReplays) * 100.0,
-				CurrentQuality:  run.avgQuality(),
-				SpentDollars:    exp.SpentDollars,
-				Message:         fmt.Sprintf("Replayed %s -> %s", c.ID, model),
+				ExperimentID:      exp.ID,
+				Status:            exp.Status,
+				CandidateModel:    model,
+				CompletedCount:    exp.CompletedReplays,
+				TotalCount:        exp.TotalReplays,
+				ProgressPercent:   float64(exp.CompletedReplays) / float64(exp.TotalReplays) * 100.0,
+				CurrentQuality:    run.avgQuality(),
+				CurrentJudgeScore: run.runningJudgeScore(),
+				SpentDollars:      exp.SpentDollars,
+				Message:           fmt.Sprintf("Replayed %s -> %s", c.ID, model),
 			})
+
+			if judgeBudgetHit {
+				// The replay landed but judging it could have crossed the cap.
+				re.stopForBudget(exp, runs)
+				return
+			}
 
 			if exp.CompletedReplays%progressSaveEvery == 0 {
 				if err := re.storage.SaveExperiment(exp); err != nil {
@@ -440,11 +553,24 @@ func (re *ReplayEngine) run(ctx context.Context, exp *Experiment, captures []*Ca
 	re.finalize(exp, runs)
 }
 
+func (re *ReplayEngine) stopForBudget(exp *Experiment, runs []*candidateRun) {
+	exp.Status = StatusBudgetExhausted
+	exp.StopReason = fmt.Sprintf("stopped before exceeding the $%.2f budget cap (spent $%.4f)", exp.BudgetCapDollars, exp.SpentDollars)
+	re.finalize(exp, runs)
+}
+
 // finalize computes results for every candidate that ran, persists the
 // experiment in its terminal state, and closes the event stream.
 func (re *ReplayEngine) finalize(exp *Experiment, runs []*candidateRun) {
 	exp.Results = []ExperimentResult{}
 	exp.Recommendations = []SwitchRecommendation{}
+	if exp.Judge != nil {
+		var judgeSpent float64
+		for _, r := range runs {
+			judgeSpent += r.judgeCost
+		}
+		exp.JudgeSpentDollars = &judgeSpent
+	}
 	for _, r := range runs {
 		if r.attempted == 0 {
 			continue
@@ -511,7 +637,10 @@ func buildReplayPayload(targetModel string, c *CaptureRecord, fixedTemp *float64
 	}
 
 	payload["model"] = targetModel
+	// Replays are never streamed, so streamed captures score on the whole
+	// answer; stream_options is only valid alongside stream: true.
 	payload["stream"] = false
+	delete(payload, "stream_options")
 	switch {
 	case fixedTemp != nil:
 		payload["temperature"] = *fixedTemp
@@ -527,33 +656,7 @@ func (re *ReplayEngine) replayOne(ctx context.Context, targetModel string, c *Ca
 		return replayOutcome{err: err}
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, re.gatewayURL+"/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return replayOutcome{err: err}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Replaylab-Replay", "1") // lets a capturing proxy skip replays
-	if token := re.replayToken(c); token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	start := time.Now()
-	resp, err := re.httpClient.Do(httpReq)
-	latency := time.Since(start).Milliseconds()
-	if err != nil {
-		return replayOutcome{latencyMs: latency, err: err}
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
-	if err != nil {
-		return replayOutcome{latencyMs: latency, err: err}
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return replayOutcome{latencyMs: latency, err: fmt.Errorf("upstream returned HTTP %d: %s", resp.StatusCode, truncate(string(raw), errorExcerptLength))}
-	}
-
-	parsed, err := parseChatCompletion(raw)
+	parsed, latency, err := re.postChat(ctx, body, re.replayToken(c))
 	if err != nil {
 		return replayOutcome{latencyMs: latency, err: err}
 	}
@@ -569,6 +672,38 @@ func (re *ReplayEngine) replayOne(ctx context.Context, targetModel string, c *Ca
 		cost:      EstimateCost(targetModel, prompt, completion),
 		tokens:    prompt + completion,
 	}
+}
+
+// postChat sends a non-streaming chat completion through the gateway and
+// returns the parsed response and the call's latency in milliseconds.
+func (re *ReplayEngine) postChat(ctx context.Context, body []byte, token string) (chatCompletion, int64, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, re.gatewayURL+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return chatCompletion{}, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Replaylab-Replay", "1") // lets a capturing proxy skip replays and judge calls
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	start := time.Now()
+	resp, err := re.httpClient.Do(httpReq)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return chatCompletion{}, latency, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
+	if err != nil {
+		return chatCompletion{}, latency, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return chatCompletion{}, latency, fmt.Errorf("upstream returned HTTP %d: %s", resp.StatusCode, truncate(string(raw), errorExcerptLength))
+	}
+	parsed, err := parseChatCompletion(raw)
+	return parsed, latency, err
 }
 
 // replayToken picks the credential for a replay: the configured token, else

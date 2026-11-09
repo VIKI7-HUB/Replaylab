@@ -14,3 +14,43 @@ jobs:
       - run: go test -race ./tests/...
       - run: go run ./demo/run_experiment -latency 0
       - run: go run ./demo/bifrost_embedded -api ""
+
+  # The loadable plugin: build the shared object for the target gateway version
+  # (loadable/go.mod), then load it into that bifrost-http release and run the
+  # gateway smoke test. Shared-object plugins need Linux, so this runs only
+  # here, in containers. A dependency bump that breaks loading fails this job.
+  loadable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the shared object
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: loadable/Dockerfile
+          target: plugin
+          outputs: type=local,dest=dist
+          cache-from: type=gha,scope=loadable
+          cache-to: type=gha,scope=loadable,mode=max
+      - name: Gateway smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: loadable/Dockerfile
+          target: smoke
+          # Re-run the test on every push, even when nothing it depends on
+          # changed and the build layers come from cache.
+          no-cache-filters: smoke
+          cache-from: type=gha,scope=loadable
+      # The one-command demo, end to end: it passes when the seed job has sent
+      # traffic through the gateway, seen it captured and started an experiment.
+      - name: Gateway demo
+        run: docker compose -f loadable/compose.yml up --build --exit-code-from seed
+      - name: Gateway demo logs
+        if: always()
+        run: docker compose -f loadable/compose.yml logs --no-color gateway | tail -n 100
+      - uses: actions/upload-artifact@v4
+        with:
+          name: replaylab-bifrost-http-plugin
+          path: dist/

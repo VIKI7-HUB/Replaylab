@@ -91,9 +91,13 @@ type CaptureQueue struct {
 	capturesTotal atomic.Int64
 	droppedTotal  atomic.Int64
 	writeErrors   atomic.Int64
-	wg            sync.WaitGroup
-	ctx           context.Context
-	cancel        context.CancelFunc
+	// streamedTotal counts streamed captures accepted into the queue;
+	// streamsTruncated counts streams that overflowed the per-stream cap.
+	streamedTotal    atomic.Int64
+	streamsTruncated atomic.Int64
+	wg               sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // NewCaptureQueue creates and initializes worker routines.
@@ -251,6 +255,12 @@ func (cq *CaptureQueue) Stop() {
 // GetMetrics returns capture and drop counts.
 func (cq *CaptureQueue) GetMetrics() (captured int64, dropped int64) {
 	return cq.capturesTotal.Load(), cq.droppedTotal.Load()
+}
+
+// StreamMetrics returns how many streamed captures were queued and how many
+// streams were truncated by the per-stream content cap.
+func (cq *CaptureQueue) StreamMetrics() (streamed int64, truncated int64) {
+	return cq.streamedTotal.Load(), cq.streamsTruncated.Load()
 }
 
 // WriteErrors returns how many captures failed to persist.

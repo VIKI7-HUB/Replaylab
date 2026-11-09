@@ -10,6 +10,14 @@
 //   - small (*8b*, *nano*, *small*): terse answers, sometimes breaks JSON,
 //     and returns occasional 503s
 //
+// Requests whose system prompt carries the Replay Lab judge marker are answered
+// as pairwise judgements instead (see judgeAnswer).
+//
+// Requests with "stream": true are answered as OpenAI-style SSE (see
+// writeStream). Two designated models misbehave mid-stream: a model whose name
+// contains "stream-fail" sends an error event halfway through, and one
+// containing "stream-stall" stops sending halfway and never ends the stream.
+//
 // Output depends only on (model, prompt), so repeated runs are reproducible.
 package mockprovider
 
@@ -75,6 +83,14 @@ type chatRequest struct {
 	ResponseFormat *struct {
 		Type string `json:"type"`
 	} `json:"response_format"`
+	Stream        bool `json:"stream"`
+	StreamOptions *struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options"`
+}
+
+func (r chatRequest) wantsUsageChunk() bool {
+	return r.StreamOptions != nil && r.StreamOptions.IncludeUsage
 }
 
 // Handler returns the mock's HTTP handler (/v1/chat/completions and /health).
@@ -116,6 +132,12 @@ func Handler(opts Options) http.Handler {
 			}
 		}
 
+		if isJudgeRequest(req.Messages) {
+			content := judgeAnswer(req.Model, prompt.String())
+			respond(w, r, req, h, content, all.Len())
+			return
+		}
+
 		if t == tierSmall && h%100 < 8 {
 			writeErr(w, http.StatusServiceUnavailable, "model overloaded, please retry")
 			return
@@ -130,27 +152,179 @@ func Handler(opts Options) http.Handler {
 			content = textAnswer(prompt.String(), t)
 		}
 
-		promptTokens := max(1, len(all.String())/4)
+		respond(w, r, req, h, content, all.Len())
+	})
+	return mux
+}
+
+func respond(w http.ResponseWriter, r *http.Request, req chatRequest, h uint64, content string, inputLen int) {
+	if req.Stream {
+		writeStream(w, r, req, h, content, inputLen)
+		return
+	}
+	writeCompletion(w, req.Model, h, content, inputLen)
+}
+
+// streamPieces splits content into deterministic deltas of up to three words,
+// keeping every byte so the deltas concatenate back to content exactly.
+func streamPieces(content string) []string {
+	words := strings.SplitAfter(content, " ")
+	var pieces []string
+	for i := 0; i < len(words); i += 3 {
+		pieces = append(pieces, strings.Join(words[i:min(i+3, len(words))], ""))
+	}
+	return pieces
+}
+
+// writeStream answers as OpenAI chat.completion.chunk SSE: a role chunk, the
+// content deltas, a finish chunk, a usage chunk when stream_options asks for
+// one, and [DONE].
+func writeStream(w http.ResponseWriter, r *http.Request, req chatRequest, h uint64, content string, inputLen int) {
+	flusher, _ := w.(http.Flusher)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	id := fmt.Sprintf("chatcmpl-mock-%x", h)
+	created := time.Now().Unix()
+	send := func(v any) {
+		b, _ := json.Marshal(v)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	chunk := func(delta map[string]string, finish any) map[string]any {
+		return map[string]any{
+			"id": id, "object": "chat.completion.chunk", "created": created, "model": req.Model,
+			"choices": []map[string]any{{"index": 0, "delta": delta, "finish_reason": finish}},
+		}
+	}
+
+	pieces := streamPieces(content)
+	model := strings.ToLower(req.Model)
+	failAt := -1
+	if strings.Contains(model, "stream-fail") || strings.Contains(model, "stream-stall") {
+		failAt = max(1, len(pieces)/2)
+	}
+
+	send(chunk(map[string]string{"role": "assistant", "content": ""}, nil))
+	for i, piece := range pieces {
+		if i == failAt {
+			if strings.Contains(model, "stream-stall") {
+				<-r.Context().Done() // never finish; wait for the client to give up
+				return
+			}
+			send(map[string]any{"error": map[string]string{"message": "mock stream failure", "type": "mock_error"}})
+			return
+		}
+		send(chunk(map[string]string{"content": piece}, nil))
+	}
+	send(chunk(map[string]string{}, "stop"))
+	if req.wantsUsageChunk() {
+		promptTokens := max(1, inputLen/4)
 		completionTokens := max(1, len(content)/4)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":      fmt.Sprintf("chatcmpl-mock-%x", h),
-			"object":  "chat.completion",
-			"created": time.Now().Unix(),
-			"model":   req.Model,
-			"choices": []map[string]any{{
-				"index":         0,
-				"message":       map[string]string{"role": "assistant", "content": content},
-				"finish_reason": "stop",
-			}},
+		send(map[string]any{
+			"id": id, "object": "chat.completion.chunk", "created": created, "model": req.Model,
+			"choices": []any{},
 			"usage": map[string]int{
 				"prompt_tokens":     promptTokens,
 				"completion_tokens": completionTokens,
 				"total_tokens":      promptTokens + completionTokens,
 			},
 		})
+	}
+	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func writeCompletion(w http.ResponseWriter, model string, h uint64, content string, inputLen int) {
+	promptTokens := max(1, inputLen/4)
+	completionTokens := max(1, len(content)/4)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      fmt.Sprintf("chatcmpl-mock-%x", h),
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
+		"model":   model,
+		"choices": []map[string]any{{
+			"index":         0,
+			"message":       map[string]string{"role": "assistant", "content": content},
+			"finish_reason": "stop",
+		}},
+		"usage": map[string]int{
+			"prompt_tokens":     promptTokens,
+			"completion_tokens": completionTokens,
+			"total_tokens":      promptTokens + completionTokens,
+		},
 	})
-	return mux
+}
+
+// judgeMarker must match replaylab.JudgeSystemMarker. It is duplicated so the
+// mock binary does not pull in the plugin and its SQLite driver.
+const judgeMarker = "[replaylab-judge]"
+
+func isJudgeRequest(msgs []struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}) bool {
+	for _, m := range msgs {
+		if m.Role == "system" && strings.HasPrefix(m.Content, judgeMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+// judgeAnswer plays a pairwise judge. A model whose name contains "biased"
+// always picks position A. Any other judge prefers the more complete response
+// (by word count) and calls a tie when the two are within 20% of each other.
+func judgeAnswer(model, prompt string) string {
+	reply := func(winner, reason string) string {
+		b, _ := json.Marshal(map[string]string{"winner": winner, "reason": reason})
+		return string(b)
+	}
+	if strings.Contains(strings.ToLower(model), "biased") {
+		return reply("A", "The first response is better.")
+	}
+	a := len(strings.Fields(fencedBlock(prompt, "RESPONSE_A")))
+	b := len(strings.Fields(fencedBlock(prompt, "RESPONSE_B")))
+	longer := max(a, b)
+	switch {
+	case longer == 0 || float64(abs(a-b))/float64(longer) <= 0.2:
+		return reply("tie", "Both responses answer the prompt equally well.")
+	case a > b:
+		return reply("A", "Response A is more complete.")
+	default:
+		return reply("B", "Response B is more complete.")
+	}
+}
+
+// fencedBlock extracts the body of a "<<<NAME id>>> ... <<<END_NAME id>>>" block.
+func fencedBlock(text, name string) string {
+	open := "<<<" + name + " "
+	start := strings.Index(text, open)
+	if start < 0 {
+		return ""
+	}
+	rest := text[start+len(open):]
+	idEnd := strings.Index(rest, ">>>\n")
+	if idEnd < 0 {
+		return ""
+	}
+	id, body := rest[:idEnd], rest[idEnd+len(">>>\n"):]
+	end := strings.Index(body, "\n<<<END_"+name+" "+id+">>>")
+	if end < 0 {
+		return ""
+	}
+	return body[:end]
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 var (

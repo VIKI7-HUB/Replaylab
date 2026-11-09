@@ -185,7 +185,10 @@ func TestBifrostTransportHookServesAPI(t *testing.T) {
 }
 
 func TestEndToEndCaptureThroughBifrostThenReplay(t *testing.T) {
-	mock := httptest.NewServer(mockprovider.Handler(mockprovider.Options{}))
+	// Simulated latency keeps the latency comparison meaningful: with none,
+	// every call takes 0-2 ms of scheduler noise and a 1 ms wobble reads as a
+	// >40% regression, flipping the verdict to SWITCH_WITH_CAUTION.
+	mock := httptest.NewServer(mockprovider.Handler(mockprovider.Options{LatencyScale: 0.25}))
 	defer mock.Close()
 	lab := newLab(t, mock.URL)
 	client := startBifrost(t, mock.URL, lab)
