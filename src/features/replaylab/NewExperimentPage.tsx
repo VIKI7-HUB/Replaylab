@@ -17,6 +17,7 @@ import {
 } from '../../api/replaylab';
 import { formatMoney } from '../../lib/format';
 import { useToast } from '../../components/Toast';
+import { errorMessage } from '../../api/error';
 
 export const NewExperimentPage: React.FC = () => {
   const navigate = useNavigate();
@@ -126,8 +127,8 @@ export const NewExperimentPage: React.FC = () => {
     try {
       const res = await createExperiment(getPayload(true));
       setEstimate(res as EstimateResponse);
-    } catch (err: any) {
-      toast(err.message || "Couldn't estimate cost", 'danger');
+    } catch (err) {
+      toast(errorMessage(err, "Couldn't estimate cost"), 'danger');
     } finally {
       setEstimating(false);
     }
@@ -145,8 +146,8 @@ export const NewExperimentPage: React.FC = () => {
       const expId = (res as { id: string }).id;
       toast('Experiment started', 'success');
       navigate(`/replaylab/experiments/${encodeURIComponent(expId)}`);
-    } catch (err: any) {
-      toast(err.message || "Couldn't start experiment", 'danger');
+    } catch (err) {
+      toast(errorMessage(err, "Couldn't start experiment"), 'danger');
       setStarting(false);
     }
   };
@@ -396,22 +397,22 @@ export const NewExperimentPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {estimate.replay_cost_dollars !== undefined &&
-                    estimate.replay_cost_dollars !== null && (
+                  {estimate.estimated_replay_dollars !== undefined &&
+                    estimate.estimated_replay_dollars !== null && (
                       <div className="flex items-center justify-between text-[13px]">
                         <span className="text-text-2">Replay cost</span>
                         <span className="text-text tabular-nums">
-                          {formatMoney(estimate.replay_cost_dollars)}
+                          {formatMoney(estimate.estimated_replay_dollars)}
                         </span>
                       </div>
                     )}
 
-                  {estimate.judge_cost_dollars !== undefined &&
-                    estimate.judge_cost_dollars !== null && (
+                  {estimate.estimated_judge_dollars !== undefined &&
+                    estimate.estimated_judge_dollars !== null && (
                       <div className="flex items-center justify-between text-[13px]">
                         <span className="text-text-2">Judge cost</span>
                         <span className="text-text tabular-nums">
-                          {formatMoney(estimate.judge_cost_dollars)}
+                          {formatMoney(estimate.estimated_judge_dollars)}
                         </span>
                       </div>
                     )}

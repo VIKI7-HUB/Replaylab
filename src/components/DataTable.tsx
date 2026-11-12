@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import {
   ColumnDef,
+  RowData,
   flexRender,
   getCoreRowModel,
   useReactTable,
@@ -12,7 +13,15 @@ import { ArrowUpIcon, ArrowDownIcon } from '@radix-ui/react-icons';
 import { Button } from './Button';
 import { Tooltip } from './Tooltip';
 
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    isNumeric?: boolean;
+  }
+}
+
 export interface DataTableProps<TData> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   columns: ColumnDef<TData, any>[];
   data: TData[];
   selectedId?: string | null;
@@ -85,7 +94,7 @@ export function DataTable<TData>({
               <tr key={headerGroup.id} className="h-8">
                 {headerGroup.headers.map((header) => {
                   const isSorted = header.column.getIsSorted();
-                  const isNumeric = (header.column.columnDef.meta as any)?.isNumeric;
+                  const isNumeric = header.column.columnDef.meta?.isNumeric;
                   return (
                     <th
                       key={header.id}
@@ -130,7 +139,7 @@ export function DataTable<TData>({
                       } ${onRowClick ? 'cursor-pointer' : ''}`}
                     >
                       {row.getVisibleCells().map((cell) => {
-                        const isNumeric = (cell.column.columnDef.meta as any)?.isNumeric;
+                        const isNumeric = cell.column.columnDef.meta?.isNumeric;
                         return (
                           <td
                             key={cell.id}
@@ -168,7 +177,7 @@ export function DataTable<TData>({
                     } ${onRowClick ? 'cursor-pointer' : ''}`}
                   >
                     {row.getVisibleCells().map((cell) => {
-                      const isNumeric = (cell.column.columnDef.meta as any)?.isNumeric;
+                      const isNumeric = cell.column.columnDef.meta?.isNumeric;
                       return (
                         <td
                           key={cell.id}

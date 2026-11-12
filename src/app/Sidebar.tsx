@@ -2,7 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
 import { Tooltip } from '../components/Tooltip';
-import { getHealth } from '../api/replaylab';
+import { productHealth } from '../api/health';
+import { PRODUCT_NAMES, Product, consoleHref, isLocalPath } from './consoles';
+import { THIS_PRODUCT } from './product';
+
+const NAV: { product: Product; label: string; items: { to: string; label: string }[] }[] = [
+  {
+    product: 'replaylab',
+    label: 'Replay Lab',
+    items: [
+      { to: '/replaylab/captures', label: 'Captures' },
+      { to: '/replaylab/experiments', label: 'Experiments' },
+      { to: '/replaylab/settings', label: 'Settings' },
+    ],
+  },
+  {
+    product: 'stale',
+    label: 'Stale answers',
+    items: [
+      { to: '/stale/check', label: 'Check' },
+      { to: '/stale/history', label: 'History' },
+    ],
+  },
+];
 
 export const Sidebar: React.FC = () => {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -10,24 +32,16 @@ export const Sidebar: React.FC = () => {
   });
   const [version, setVersion] = useState<string>('v1.0.0');
 
-  const appMode = import.meta.env.VITE_APP_MODE || 'all';
-
-  let title = 'Operator console';
-  if (appMode === 'replaylab') title = 'Bifrost Replay Lab';
-  else if (appMode === 'stale') title = 'Stale-Answer Detector';
+  const title = PRODUCT_NAMES[THIS_PRODUCT];
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
   }, [collapsed]);
 
   useEffect(() => {
-    getHealth()
-      .then((h) => {
-        if (h.version) setVersion(`v${h.version}`);
-      })
-      .catch(() => {
-        // fallback
-      });
+    productHealth[THIS_PRODUCT]().then((h) => {
+      if (h.version) setVersion(`v${h.version}`);
+    });
   }, []);
 
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
@@ -66,45 +80,22 @@ export const Sidebar: React.FC = () => {
 
         {/* Navigation list */}
         <nav className="flex flex-col pt-2">
-          {/* Overview group (all mode) */}
-          {appMode === 'all' && (
-            <NavLink to="/" end className={navItemClass}>
-              Overview
-            </NavLink>
-          )}
-
-          {/* Replay Lab group (all or replaylab mode) */}
-          {(appMode === 'all' || appMode === 'replaylab') && (
-            <>
-              <div className="text-[12px] font-medium text-text-3 px-4 pt-4 pb-1">
-                Replay Lab
-              </div>
-              <NavLink to="/replaylab/captures" className={navItemClass}>
-                Captures
-              </NavLink>
-              <NavLink to="/replaylab/experiments" className={navItemClass}>
-                Experiments
-              </NavLink>
-              <NavLink to="/replaylab/settings" className={navItemClass}>
-                Settings
-              </NavLink>
-            </>
-          )}
-
-          {/* Stale answers group (all or stale mode) */}
-          {(appMode === 'all' || appMode === 'stale') && (
-            <>
-              <div className="text-[12px] font-medium text-text-3 px-4 pt-4 pb-1">
-                Stale answers
-              </div>
-              <NavLink to="/stale/check" className={navItemClass}>
-                Check
-              </NavLink>
-              <NavLink to="/stale/history" className={navItemClass}>
-                History
-              </NavLink>
-            </>
-          )}
+          {NAV.map((group) => (
+            <React.Fragment key={group.product}>
+              <div className="text-[12px] font-medium text-text-3 px-4 pt-4 pb-1">{group.label}</div>
+              {group.items.map((item) =>
+                isLocalPath(item.to) ? (
+                  <NavLink key={item.to} to={item.to} className={navItemClass}>
+                    {item.label}
+                  </NavLink>
+                ) : (
+                  <a key={item.to} href={consoleHref(item.to)} className={navItemClass({ isActive: false })}>
+                    {item.label}
+                  </a>
+                )
+              )}
+            </React.Fragment>
+          ))}
         </nav>
       </div>
 

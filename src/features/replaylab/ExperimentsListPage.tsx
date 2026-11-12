@@ -10,6 +10,7 @@ import { EmptyState, ErrorState, TableSkeleton } from '../../components/States';
 import { Tooltip } from '../../components/Tooltip';
 import { Experiment, getExperiments } from '../../api/replaylab';
 import { formatIsoUtc, formatMoney, formatRelativeTime } from '../../lib/format';
+import { errorMessage } from '../../api/error';
 
 export const ExperimentsListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,9 +24,9 @@ export const ExperimentsListPage: React.FC = () => {
     try {
       const data = await getExperiments(50);
       setExperiments(data);
-    } catch (err: any) {
+    } catch (err) {
       if (!isBackground) {
-        setError(err.message || 'Failed to load experiments');
+        setError(errorMessage(err, 'Failed to load experiments'));
       }
     } finally {
       if (!isBackground) setLoading(false);

@@ -6,7 +6,10 @@ import { ColumnDef } from '@tanstack/react-table';
 export interface ChartContainerProps {
   title: string;
   timeRangeText?: string;
+  // Tables of any row shape; TanStack's own column type is generic the same way.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tableData?: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tableColumns?: ColumnDef<any, any>[];
   children: React.ReactNode;
   className?: string;
@@ -55,14 +58,27 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   );
 };
 
-export const CustomChartTooltip = ({ active, payload, label }: any) => {
+interface ChartPayloadEntry {
+  name?: string;
+  value?: number | string;
+  color?: string;
+  fill?: string;
+}
+
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: ChartPayloadEntry[];
+  label?: string | number;
+}
+
+export const CustomChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   if (!active || !payload || !payload.length) return null;
 
   return (
     <div className="bg-bg shadow-float rounded p-2.5 text-[12px] border border-border min-w-[160px]">
       <div className="text-text-2 mb-2 font-medium">{label}</div>
       <div className="space-y-1">
-        {payload.map((entry: any, index: number) => (
+        {payload.map((entry, index) => (
           <div key={index} className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
               <span
@@ -81,12 +97,12 @@ export const CustomChartTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-export const CustomChartLegend = ({ payload }: any) => {
+export const CustomChartLegend = ({ payload }: { payload?: ChartPayloadEntry[] }) => {
   if (!payload || !payload.length) return null;
 
   return (
     <div className="flex items-center gap-4 text-[12px] text-text-2 mb-3">
-      {payload.map((entry: any, index: number) => (
+      {payload.map((entry, index) => (
         <div key={index} className="inline-flex items-center gap-1.5">
           <span
             className="w-2 h-2 shrink-0 inline-block"

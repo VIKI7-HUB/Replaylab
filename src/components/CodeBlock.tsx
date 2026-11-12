@@ -9,7 +9,7 @@ export interface CodeBlockProps {
 
 export const CodeBlock: React.FC<CodeBlockProps> = ({ code, isJson = true, className = '' }) => {
   let formatted = code;
-  let parsedJson: any = null;
+  let parsedJson: unknown = null;
 
   if (isJson) {
     try {

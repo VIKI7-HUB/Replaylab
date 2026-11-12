@@ -39,6 +39,7 @@ import {
   formatRelativeTime,
 } from '../../lib/format';
 import { useToast } from '../../components/Toast';
+import { errorMessage } from '../../api/error';
 
 export const ExperimentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -69,8 +70,8 @@ export const ExperimentDetailPage: React.FC = () => {
     try {
       const exp = await getExperimentById(id);
       setExperiment(exp);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load experiment');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to load experiment'));
     } finally {
       setLoading(false);
     }
@@ -119,8 +120,8 @@ export const ExperimentDetailPage: React.FC = () => {
       toast('Experiment cancelled', 'neutral');
       setCancelDialogOpen(false);
       fetchDetails();
-    } catch (err: any) {
-      toast(err.message || 'Failed to cancel run', 'danger');
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to cancel run'), 'danger');
     } finally {
       setCancelling(false);
     }
@@ -134,8 +135,8 @@ export const ExperimentDetailPage: React.FC = () => {
       setCopiedMd(true);
       toast('Report copied to clipboard', 'success');
       setTimeout(() => setCopiedMd(false), 1500);
-    } catch (err: any) {
-      toast(err.message || 'Failed to get report', 'danger');
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to get report'), 'danger');
     }
   };
 
@@ -150,8 +151,8 @@ export const ExperimentDetailPage: React.FC = () => {
       a.download = `experiment-${id}.md`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err: any) {
-      toast(err.message || 'Failed to download report', 'danger');
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to download report'), 'danger');
     }
   };
 
@@ -415,7 +416,7 @@ export const ExperimentDetailPage: React.FC = () => {
                   </div>
 
                   <div className="text-[12px] text-text-3 border-t border-border pt-2 mt-2">
-                    Confidence {(1 - r.error_rate).toFixed(2)}
+                    Confidence {(experiment.recommendations.find((rec) => rec.candidate_model === r.candidate_model)?.confidence ?? 0).toFixed(2)}
                   </div>
                 </div>
               );

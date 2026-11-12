@@ -5,6 +5,7 @@ import { MagnifyingGlassIcon } from '@radix-ui/react-icons';
 import { useTheme } from './theme';
 import { searchGlobal, SearchResultItem } from '../api/insights';
 import { formatRelativeTime } from '../lib/format';
+import { consoleHref, isLocalPath } from './consoles';
 
 export interface CommandPaletteProps {
   open: boolean;
@@ -52,6 +53,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
 
   if (!open) return null;
 
+  // Paths served by the other console leave this app.
+  const go = (path: string) => {
+    if (isLocalPath(path)) navigate(path);
+    else window.location.href = consoleHref(path);
+  };
+
   const handleSelect = (action: () => void) => {
     action();
     onOpenChange(false);
@@ -85,7 +92,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
                 {results.map((item) => (
                   <Command.Item
                     key={`${item.kind}-${item.id}`}
-                    onSelect={() => handleSelect(() => navigate(item.url))}
+                    onSelect={() => handleSelect(() => go(item.url))}
                     className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center justify-between cursor-pointer data-[selected=true]:bg-bg-selected"
                   >
                     <div className="flex items-center gap-2 truncate">
@@ -93,7 +100,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
                       <span className="truncate">{item.title}</span>
                     </div>
                     <span className="text-[12px] text-text-3 shrink-0">
-                      {formatRelativeTime(item.created_at)}
+                      {formatRelativeTime(item.at)}
                     </span>
                   </Command.Item>
                 ))}
@@ -102,37 +109,31 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
 
             <Command.Group heading="Go to" className="text-[12px] font-medium text-text-3 px-2 py-1.5">
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/'))}
-                className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
-              >
-                Overview
-              </Command.Item>
-              <Command.Item
-                onSelect={() => handleSelect(() => navigate('/replaylab/captures'))}
+                onSelect={() => handleSelect(() => go('/replaylab/captures'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 Captures
               </Command.Item>
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/replaylab/experiments'))}
+                onSelect={() => handleSelect(() => go('/replaylab/experiments'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 Experiments
               </Command.Item>
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/replaylab/settings'))}
+                onSelect={() => handleSelect(() => go('/replaylab/settings'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 Settings
               </Command.Item>
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/stale/check'))}
+                onSelect={() => handleSelect(() => go('/stale/check'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 Check an answer
               </Command.Item>
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/stale/history'))}
+                onSelect={() => handleSelect(() => go('/stale/history'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 History
@@ -141,13 +142,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
 
             <Command.Group heading="Actions" className="text-[12px] font-medium text-text-3 px-2 py-1.5">
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/replaylab/experiments/new'))}
+                onSelect={() => handleSelect(() => go('/replaylab/experiments/new'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 New experiment
               </Command.Item>
               <Command.Item
-                onSelect={() => handleSelect(() => navigate('/stale/check'))}
+                onSelect={() => handleSelect(() => go('/stale/check'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >
                 Check an answer

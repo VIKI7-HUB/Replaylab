@@ -3,81 +3,24 @@ import { useLocation } from 'react-router-dom';
 import { MagnifyingGlassIcon, SunIcon, MoonIcon } from '@radix-ui/react-icons';
 import { useTheme } from './theme';
 import { Tooltip } from '../components/Tooltip';
-import { getHealth as getReplayLabHealth } from '../api/replaylab';
-import { getStaleHealth } from '../api/stale';
-import { getInsightsHealth } from '../api/insights';
+import { ServiceHealth, insightsHealth, replayLabHealth, staleHealth } from '../api/health';
+import { PRODUCT_NAMES } from './consoles';
+import { THIS_PRODUCT } from './product';
 
 export interface TopBarProps {
   onOpenSearch: () => void;
 }
 
+const CHECKING: ServiceHealth = { status: 'degraded', text: 'Checking…' };
+
 export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
 
-  // Health states
-  const [replayLabHealth, setReplayLabHealth] = useState<{ status: 'healthy' | 'degraded' | 'offline'; text: string }>({
-    status: 'healthy',
-    text: 'Replay Lab: connecting…',
-  });
-  const [staleHealth, setStaleHealth] = useState<{ status: 'healthy' | 'degraded' | 'offline'; text: string }>({
-    status: 'healthy',
-    text: 'Stale-Answer Detector: connecting…',
-  });
-  const [insightsHealth, setInsightsHealth] = useState<{ status: 'healthy' | 'offline'; text: string }>({
-    status: 'offline',
-    text: 'Insights: checking…',
-  });
+  const [health, setHealth] = useState<ServiceHealth[]>([CHECKING, CHECKING, CHECKING]);
 
   const pollHealth = async () => {
-    const [replayRes, staleRes, insightsRes] = await Promise.allSettled([
-      getReplayLabHealth(),
-      getStaleHealth(),
-      getInsightsHealth(),
-    ]);
-
-    // 1. Replay Lab
-    if (replayRes.status === 'fulfilled') {
-      const h = replayRes.value;
-      setReplayLabHealth({
-        status: 'healthy',
-        text: `Replay Lab: healthy · ${h.stored_captures} captures`,
-      });
-    } else {
-      setReplayLabHealth({
-        status: 'offline',
-        text: 'Replay Lab: offline',
-      });
-    }
-
-    // 2. Stale
-    if (staleRes.status === 'fulfilled') {
-      const h = staleRes.value;
-      const modeText = h.verification_mode === 'llm' ? 'llm mode' : 'heuristic mode';
-      setStaleHealth({
-        status: h.status === 'healthy' ? 'healthy' : 'degraded',
-        text: `Stale-Answer Detector: healthy · ${modeText}`,
-      });
-    } else {
-      setStaleHealth({
-        status: 'offline',
-        text: 'Stale-Answer Detector: offline',
-      });
-    }
-
-    // 3. Insights
-    if (insightsRes.status === 'fulfilled') {
-      const ok = insightsRes.value;
-      setInsightsHealth({
-        status: ok ? 'healthy' : 'offline',
-        text: ok ? 'Insights: healthy' : 'Insights: offline',
-      });
-    } else {
-      setInsightsHealth({
-        status: 'offline',
-        text: 'Insights: offline',
-      });
-    }
+    setHealth(await Promise.all([replayLabHealth(), staleHealth(), insightsHealth()]));
   };
 
   useEffect(() => {
@@ -89,7 +32,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   // Compute breadcrumb
   const path = location.pathname;
   let parent = '';
-  let current = 'Overview';
+  let current = PRODUCT_NAMES[THIS_PRODUCT];
 
   if (path.startsWith('/replaylab/captures')) {
     parent = 'Replay Lab';
@@ -157,27 +100,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
 
         {/* 3 Health dots 8px apart */}
         <div className="flex items-center gap-2">
-          <Tooltip content={replayLabHealth.text}>
-            <span
-              className={`w-2 h-2 rounded-full cursor-help ${getDotColor(
-                replayLabHealth.status
-              )}`}
-            />
-          </Tooltip>
-          <Tooltip content={staleHealth.text}>
-            <span
-              className={`w-2 h-2 rounded-full cursor-help ${getDotColor(
-                staleHealth.status
-              )}`}
-            />
-          </Tooltip>
-          <Tooltip content={insightsHealth.text}>
-            <span
-              className={`w-2 h-2 rounded-full cursor-help ${getDotColor(
-                insightsHealth.status
-              )}`}
-            />
-          </Tooltip>
+          {health.map((h, i) => (
+            <Tooltip key={i} content={h.text}>
+              <span className={`w-2 h-2 rounded-full cursor-help ${getDotColor(h.status)}`} />
+            </Tooltip>
+          ))}
         </div>
 
         {/* Theme toggle */}

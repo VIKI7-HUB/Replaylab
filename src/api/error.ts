@@ -23,3 +23,8 @@ export function normalizeError(err: unknown, service: string, url: string): ApiE
   return new ApiError(0, `Can't reach ${service} at ${url}`);
 }
 
+
+/** The message to show for a caught error, or the fallback when it has none. */
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}

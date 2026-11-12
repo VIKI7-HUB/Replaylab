@@ -1,16 +1,14 @@
 {
-  "name": "operator-console",
+  "name": "replay-lab-console",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:replaylab": "vite --port 3000 --mode replaylab",
-    "dev:stale": "vite --port 3001 --mode stale",
+    "dev": "vite --port 3000",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'No lint errors'",
+    "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test"
   },
@@ -39,16 +37,21 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.65.0",
     "@types/node": "22.10.1",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "4.3.4",
     "autoprefixer": "10.4.20",
-    "playwright": "^1.65.0",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "globals": "17.14.0",
+    "playwright": "1.65.0",
     "postcss": "8.4.49",
     "tailwindcss": "3.4.15",
     "typescript": "5.6.3",
+    "typescript-eslint": "8.72.2",
     "vite": "5.4.11",
     "vitest": "2.1.8"
   }

@@ -25,6 +25,7 @@ import {
   formatRelativeTime,
   formatTokens,
 } from '../../lib/format';
+import { errorMessage } from '../../api/error';
 
 export const CapturesPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,8 +66,8 @@ export const CapturesPage: React.FC = () => {
         offset: page * 50,
       });
       setCaptures(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load captures');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to load captures'));
     } finally {
       setLoading(false);
     }
@@ -155,9 +156,9 @@ export const CapturesPage: React.FC = () => {
         id: 'time',
         header: 'Time',
         cell: ({ row }) => (
-          <Tooltip content={formatIsoUtc(row.original.created_at)}>
+          <Tooltip content={formatIsoUtc(row.original.timestamp)}>
             <span className="mono-ui text-[12px] text-text-2">
-              {formatRelativeTime(row.original.created_at)}
+              {formatRelativeTime(row.original.timestamp)}
             </span>
           </Tooltip>
         ),
@@ -230,20 +231,20 @@ export const CapturesPage: React.FC = () => {
         },
       },
       {
-        accessorKey: 'cost_dollars',
+        accessorKey: 'cost_estimate',
         header: 'Cost',
         meta: { isNumeric: true },
         cell: ({ row }) => {
           const prefix = row.original.usage_estimated ? '≈ ' : '';
           return (
             <span className="tabular-nums">
-              {prefix}{formatMoney(row.original.cost_dollars)}
+              {prefix}{formatMoney(row.original.cost_estimate)}
             </span>
           );
         },
       },
       {
-        accessorKey: 'streamed',
+        accessorKey: 'is_streaming',
         header: 'Streamed',
         cell: ({ getValue }) => (getValue<boolean>() ? 'Yes' : ''),
       },

@@ -40,7 +40,8 @@ export type ModelPrice = z.infer<typeof ModelPriceSchema>;
 
 export const CaptureSchema = z.object({
   id: z.string(),
-  created_at: z.string(),
+  request_id: z.string().default(''),
+  timestamp: z.string(),
   provider: z.string().optional().nullable(),
   model: z.string(),
   virtual_key: z.string().optional().nullable(),
@@ -53,8 +54,8 @@ export const CaptureSchema = z.object({
   total_tokens: z.number().default(0),
   latency_ms: z.number().default(0),
   time_to_first_token_ms: z.number().optional().nullable(),
-  cost_dollars: z.number().default(0),
-  streamed: z.boolean().default(false),
+  cost_estimate: z.number().default(0),
+  is_streaming: z.boolean().default(false),
   usage_estimated: z.boolean().default(false),
   hash_only: z.boolean().default(false),
   error_message: z.string().optional().nullable(),
@@ -110,6 +111,12 @@ export const CandidateResultSchema = z.object({
 });
 export type CandidateResult = z.infer<typeof CandidateResultSchema>;
 
+export const RecommendationSchema = z.object({
+  candidate_model: z.string(),
+  verdict: z.string(),
+  confidence: z.number().default(0),
+});
+
 export const ExperimentSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -123,6 +130,7 @@ export const ExperimentSchema = z.object({
   budget_cap_dollars: z.number().default(0),
   created_at: z.string(),
   results: z.array(CandidateResultSchema).default([]),
+  recommendations: z.array(RecommendationSchema).default([]),
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
@@ -130,8 +138,8 @@ export const EstimateResponseSchema = z.object({
   spent_dollars: z.number().default(0),
   total_replays: z.number().default(0),
   stop_reason: z.string().optional().nullable(),
-  replay_cost_dollars: z.number().optional().nullable(),
-  judge_cost_dollars: z.number().optional().nullable(),
+  estimated_replay_dollars: z.number().optional().nullable(),
+  estimated_judge_dollars: z.number().optional().nullable(),
 });
 export type EstimateResponse = z.infer<typeof EstimateResponseSchema>;
 

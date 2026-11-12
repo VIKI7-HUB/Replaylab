@@ -8,6 +8,7 @@ import { Panel } from '../../components/Panel';
 import { ErrorState, Skeleton } from '../../components/States';
 import { ReplayLabConfig, getConfig, updateConfig } from '../../api/replaylab';
 import { useToast } from '../../components/Toast';
+import { errorMessage } from '../../api/error';
 
 export const SettingsPage: React.FC = () => {
   const { toast } = useToast();
@@ -28,8 +29,8 @@ export const SettingsPage: React.FC = () => {
       const cfg = await getConfig();
       setInitialConfig(cfg);
       setConfig(cfg);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load settings');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to load settings'));
     } finally {
       setLoading(false);
     }
@@ -105,8 +106,8 @@ export const SettingsPage: React.FC = () => {
       setInitialConfig(updated);
       setConfig(updated);
       toast('Settings saved', 'success');
-    } catch (err: any) {
-      toast(err.message || 'Failed to save settings', 'danger');
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to save settings'), 'danger');
     } finally {
       setSaving(false);
     }

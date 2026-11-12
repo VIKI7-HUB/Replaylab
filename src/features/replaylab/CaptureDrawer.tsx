@@ -84,11 +84,11 @@ export const CaptureDrawer: React.FC<CaptureDrawerProps> = ({
         <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 bg-bg border border-border rounded-md p-4">
           <div>
             <div className="text-[12px] text-text-2">Request ID</div>
-            <div className="mono-ui text-[13px] text-text truncate">{capture.id}</div>
+            <div className="mono-ui text-[13px] text-text truncate">{capture.request_id || capture.id}</div>
           </div>
           <div>
             <div className="text-[12px] text-text-2">Time</div>
-            <div className="mono-ui text-[13px] text-text">{formatIsoUtc(capture.created_at)}</div>
+            <div className="mono-ui text-[13px] text-text">{formatIsoUtc(capture.timestamp)}</div>
           </div>
           <div>
             <div className="text-[12px] text-text-2">Provider</div>
@@ -147,7 +147,7 @@ export const CaptureDrawer: React.FC<CaptureDrawerProps> = ({
           <div>
             <div className="text-[12px] text-text-2">Cost</div>
             <div className="text-[13px] text-text tabular-nums">
-              {capture.usage_estimated ? '≈ ' : ''}{formatMoney(capture.cost_dollars)}
+              {capture.usage_estimated ? '≈ ' : ''}{formatMoney(capture.cost_estimate)}
             </div>
           </div>
         </div>
