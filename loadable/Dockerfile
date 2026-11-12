@@ -121,3 +121,19 @@ COPY --from=mock /out/mockprovider /app/mockprovider
 RUN V=$(cat /plugins/TARGET_GATEWAY_VERSION) \
  && /app/smoketest -gateway /app/bifrost-http -mock /app/mockprovider \
       -plugin "/plugins/replaylab-bifrost-http-$V.so" -version "$V" -workdir /tmp/smoke
+
+# --- Render: the gateway plus a router on the one public port ----------------
+# Render builds a Dockerfile's last stage and can't pick a target, so this
+# stage stays last. Every other use names its target explicitly.
+#
+#   gateway   bifrost-http on 127.0.0.1:8080, Replay Lab's API on 127.0.0.1:8086
+#   router    Caddy on $PORT: /replaylab/* to the API, everything else to the gateway
+#
+# Needs GROQ_API_KEY (see loadable/render/config.json).
+FROM gateway AS render
+USER root
+RUN apk add --no-cache caddy
+COPY loadable/render/ /render/
+RUN sed -i 's/\r$//' /render/start.sh && chmod +x /render/start.sh
+USER appuser
+ENTRYPOINT ["/render/start.sh"]

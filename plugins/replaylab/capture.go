@@ -37,6 +37,12 @@ var KnownPricing = map[string]ModelPricing{
 	"deepseek-chat":      {InputPer1M: 0.14, OutputPer1M: 0.28},
 	"meta-llama-3.1-70b": {InputPer1M: 0.40, OutputPer1M: 0.40},
 	"meta-llama-3.1-8b":  {InputPer1M: 0.05, OutputPer1M: 0.05},
+	// Groq, keyed with the provider prefix Bifrost routes on, so the models
+	// listed by GET /replaylab/models can be replayed as named.
+	"groq/llama-3.3-70b-versatile": {InputPer1M: 0.59, OutputPer1M: 0.79},
+	"groq/llama-3.1-8b-instant":    {InputPer1M: 0.05, OutputPer1M: 0.08},
+	"groq/openai/gpt-oss-120b":     {InputPer1M: 0.15, OutputPer1M: 0.60},
+	"groq/openai/gpt-oss-20b":      {InputPer1M: 0.075, OutputPer1M: 0.30},
 }
 
 // fallbackPricing is used for models missing from KnownPricing.
