@@ -87,3 +87,19 @@ def test_health_reports_verification_mode():
     data = client.get("/v1/health").json()
     assert data["verification_mode"] == "heuristic"
     assert data["tavily_configured"] is False
+
+
+def test_dashboard_is_served_at_root():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Stale-Answer Detector" in resp.text
+    assert resp.headers["content-type"].startswith("text/html")
+
+
+def test_samples_endpoint_returns_demo_answers():
+    resp = client.get("/v1/samples")
+    assert resp.status_code == 200
+    samples = resp.json()
+    assert isinstance(samples, list)
+    if samples:  # bundled demo file is present in the repo
+        assert {"topic", "answer"} <= set(samples[0].keys())

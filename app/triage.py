@@ -49,6 +49,7 @@ def compute_staleness_risk(claim: Claim, answer_date: Optional[str] = None) -> T
 
     # Historical year check (e.g. before 2000)
     years = [int(y) for y in YEAR_PATTERN.findall(claim.text)]
+    current_year = datetime.now(timezone.utc).year
     if years:
         oldest_year = min(years)
         newest_year = max(years)
@@ -56,11 +57,11 @@ def compute_staleness_risk(claim: Claim, answer_date: Optional[str] = None) -> T
             risk = 0.08
             reasons.append(f"Historical event citation ({oldest_year})")
             return (round(risk, 3), reasons, True, "not_checked: timeless historical fact")
-        elif newest_year <= 2023:
+        elif newest_year <= current_year - 3:
             # Older reference year in an evolving tech/policy field increases risk
             risk += 0.15
             reasons.append(f"Explicit older reference year ({newest_year}) indicates likely model cutoff staleness")
-        elif newest_year >= 2024:
+        elif newest_year >= current_year - 2:
             risk += 0.05
             reasons.append(f"Contemporary reference year ({newest_year}) requires recent live verification")
 

@@ -5,6 +5,8 @@
 
 Built for the Tavily track.
 
+**🌐 Built-in dashboard:** the API serves a single-file audit dashboard at **http://localhost:8000/** — animated pipeline, freshness gauge, score breakdown bars, corrected answer with citations, one-click demo answers (from `GET /v1/samples`), and JSON report export. The full React operator console lives in [`../frontend`](../frontend).
+
 ## Pipeline
 
 ```mermaid
@@ -65,6 +67,21 @@ python benchmark/run_benchmark.py           # 30 labeled claims: precision, reca
 
 The demo and benchmark make live Tavily calls; the benchmark prints how many it used.
 
+## Benchmark results
+
+Measured live on `benchmark/labeled_claims.json` (30 balanced claims, 15 stale / 15 current), **heuristic mode** (no LLM key configured — the always-works fallback path):
+
+| Metric | Value |
+| :--- | :--- |
+| Precision (staleness) | **75.0%** |
+| Recall | 40.0% |
+| F1 | 52.2% |
+| Accuracy | 63.3% |
+| Abstentions (`UNVERIFIABLE`) | 3 |
+| Tavily credits spent | 28 |
+
+Two things matter more than the raw numbers: the heuristic verifier **never guessed** — every miss was an abstention or a conservative `CURRENT`, never an invented verdict — and the whole run cost **28 credits** thanks to triage + caching. Heuristic mode is the safety net; with `LLM_API_KEY` set, extraction, judging and correction all run through the LLM and catch the subtler staleness cases (leadership euphemisms, superseded statuses, deprecated flags) that regexes can't.
+
 ## API
 
 Full request and response shapes are in [docs/API.md](docs/API.md) and at `/docs`.
@@ -88,6 +105,7 @@ curl -X POST http://localhost:8000/v1/check -H "Content-Type: application/json" 
 | Path | What's there |
 | :--- | :--- |
 | `app/` | The FastAPI service. `main.py` holds the routes. The pipeline runs `extractor` → `triage` → `queries` and `tavily_client` → `verifier` → `scoring` → `corrector`, and `cache`, `db` and `usage` handle the search cache, report history and credit accounting. |
+| `static/` | The single-file web dashboard served at `/` — no build step, no frameworks. |
 | `tests/` | Unit and API tests (`pytest`), with no network calls and no credits spent |
 | `demo/` | `run_demo.py` (the terminal demo over `sample_answers.json`) and a Postman collection for the API |
 | `benchmark/` | 30 labeled claims, and the script that measures precision, recall and abstentions on them |

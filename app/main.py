@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, AsyncGenerator
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.config import settings
 from app import usage
@@ -165,6 +167,33 @@ async def run_pipeline(
 
     await _emit(event_queue, "complete", report.model_dump(mode="json"))
     return report
+
+
+INDEX_PATH = Path(__file__).parent.parent / "static" / "index.html"
+SAMPLES_PATH = Path(__file__).parent.parent / "demo" / "sample_answers.json"
+
+
+@app.get(
+    "/",
+    include_in_schema=False,
+)
+async def dashboard() -> FileResponse:
+    """Serve the live-audit web dashboard."""
+    return FileResponse(INDEX_PATH)
+
+
+@app.get(
+    "/v1/samples",
+    summary="Curated sample answers for the demo UI",
+    tags=["Auditing"],
+)
+async def list_samples() -> List[Dict[str, Any]]:
+    """Return the bundled demo answers so the dashboard can load them with one click."""
+    try:
+        with open(SAMPLES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
 
 
 @app.post(
