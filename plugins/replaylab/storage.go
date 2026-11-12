@@ -274,8 +274,10 @@ func (s *SQLiteStorage) GetCaptures(filter CaptureFilter) ([]*CaptureRecord, err
 	var args []any
 
 	if filter.Model != "" {
-		conditions = append(conditions, "model = ?")
-		args = append(args, filter.Model)
+		// Bifrost records the provider and model separately, so a model named
+		// the way Bifrost routes it ("groq/openai/gpt-oss-20b") matches too.
+		conditions = append(conditions, "(model = ? OR provider || '/' || model = ?)")
+		args = append(args, filter.Model, filter.Model)
 	}
 	if filter.Tag != "" {
 		conditions = append(conditions, "tag = ?")
@@ -354,8 +356,8 @@ func (s *SQLiteStorage) GetTrafficVolume(model string) (TrafficVolume, error) {
 	where := " WHERE status_code BETWEEN 200 AND 299"
 	var args []any
 	if model != "" {
-		where += " AND model = ?"
-		args = append(args, model)
+		where += " AND (model = ? OR provider || '/' || model = ?)"
+		args = append(args, model, model)
 	}
 	var v TrafficVolume
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM captures"+where, args...).Scan(&v.Count); err != nil {

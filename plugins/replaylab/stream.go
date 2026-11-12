@@ -190,7 +190,7 @@ func (p *Plugin) FinishStream(reqID string, out StreamOutcome) {
 		CompletionTokens: completion,
 		TotalTokens:      prompt + completion,
 		LatencyMs:        now.Sub(pending.StartTime).Milliseconds(),
-		CostEstimate:     EstimateCost(pending.Model, prompt, completion),
+		CostEstimate:     EstimateCost(captureModelForPricing(pending.Provider, pending.Model), prompt, completion),
 		StatusCode:       status,
 		ErrorMessage:     out.ErrorMessage,
 		IsStreaming:      true,

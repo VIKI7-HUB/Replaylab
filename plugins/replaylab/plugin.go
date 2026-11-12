@@ -200,7 +200,7 @@ func (p *Plugin) RecordResponse(reqID string, responseContent string, promptToke
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
 		LatencyMs:        time.Since(pending.StartTime).Milliseconds(),
-		CostEstimate:     EstimateCost(pending.Model, promptTokens, completionTokens),
+		CostEstimate:     EstimateCost(captureModelForPricing(pending.Provider, pending.Model), promptTokens, completionTokens),
 		StatusCode:       statusCode,
 		ErrorMessage:     errMsg,
 		IsStreaming:      isStreaming,
