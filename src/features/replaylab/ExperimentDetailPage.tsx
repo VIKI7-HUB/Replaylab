@@ -282,7 +282,7 @@ export const ExperimentDetailPage: React.FC = () => {
                   {progress?.total_count || experiment.total_replays} replays
                 </span>
                 <span className="tabular-nums font-medium">
-                  {progress?.progress_percent ||
+                  {Math.round(progress?.progress_percent ?? 0) ||
                     (experiment.total_replays > 0
                       ? Math.round(
                           (experiment.completed_replays / experiment.total_replays) * 100
