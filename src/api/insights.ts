@@ -3,7 +3,7 @@ import { ApiError, normalizeError } from './error';
 
 // The read API owned by the database team (ANTIGRAVITY_DATABASE_PROMPT.md §5.4).
 // The console works without it; only search depends on it.
-const BASE_URL = import.meta.env.VITE_INSIGHTS_URL || 'http://localhost:8090';
+const BASE_URL = import.meta.env.VITE_INSIGHTS_URL || '';
 
 const SEARCH_KINDS = ['capture', 'experiment', 'report', 'claim'] as const;
 
@@ -57,7 +57,7 @@ async function getJson(path: string): Promise<unknown> {
 }
 
 export async function searchGlobal(q: string, limit: number = 20): Promise<SearchResultItem[]> {
-  if (!q.trim()) return [];
+  if (!q.trim() || !BASE_URL) return [];
   const data = await getJson(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`);
   const hits = z.array(SearchHitSchema).parse(data);
   return hits.map((hit) => ({

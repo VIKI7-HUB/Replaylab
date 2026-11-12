@@ -11,7 +11,8 @@ export interface ServiceHealth {
 
 const REPLAYLAB_URL = import.meta.env.VITE_REPLAYLAB_URL || 'http://localhost:8086';
 const STALE_URL = import.meta.env.VITE_STALE_URL || 'http://localhost:8000';
-const INSIGHTS_URL = import.meta.env.VITE_INSIGHTS_URL || 'http://localhost:8090';
+// Optional: with no URL configured, the Insights API is treated as offline.
+const INSIGHTS_URL = import.meta.env.VITE_INSIGHTS_URL || '';
 
 async function getJson(url: string): Promise<{ ok: boolean; body: Record<string, unknown> }> {
   const res = await fetch(url);
@@ -56,6 +57,7 @@ export async function staleHealth(): Promise<ServiceHealth> {
 }
 
 export async function insightsHealth(): Promise<ServiceHealth> {
+  if (!INSIGHTS_URL) return { status: 'offline', text: 'Insights: not configured' };
   try {
     const res = await fetch(`${INSIGHTS_URL}/api/health`);
     return res.ok
