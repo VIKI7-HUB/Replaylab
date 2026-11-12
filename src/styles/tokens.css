@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root, [data-theme="light"] {
+  --bg:            #FFFFFF;  /* page, panels */
+  --bg-subtle:     #FAFAFA;  /* sidebar, table header, code blocks */
+  --bg-muted:      #F4F4F4;  /* hover row, skeleton, input disabled, progress track */
+  --bg-selected:   #EDEDED;  /* selected nav item, selected row */
+  --border:        #E6E6E6;  /* default 1px borders, dividers */
+  --border-strong: #D1D1D1;  /* input borders, focused panel */
+  --text:          #171717;  /* primary text */
+  --text-2:        #525252;  /* secondary text, labels */
+  --text-3:        #6B6B6B;  /* metadata, placeholders, axis labels */
+  --accent:        #0A5DC2;  /* links, focus ring, selected tab indicator, info */
+  --accent-bg:     #EBF2FC;
+  --success:       #137333;  --success-bg: #EAF5EE;
+  --warning:       #8A5300;  --warning-bg: #FBF3E4;
+  --danger:        #C42B2B;  --danger-bg:  #FCEDED;
+  --btn-primary-bg: #171717; --btn-primary-fg: #FFFFFF; --btn-primary-hover: #383838;
+  --overlay:       rgba(0,0,0,0.4);
+  --chart-1: #2F6FDB; --chart-2: #0F8A80; --chart-3: #C2410C;
+  --chart-4: #A16207; --chart-5: #6B7280; --chart-6: #BE185D;
+  --shadow-float: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] {
+  --bg:            #0A0A0A;
+  --bg-subtle:     #111111;
+  --bg-muted:      #1A1A1A;
+  --bg-selected:   #242424;
+  --border:        #262626;
+  --border-strong: #3A3A3A;
+  --text:          #EDEDED;
+  --text-2:        #A3A3A3;
+  --text-3:        #8F8F8F;
+  --accent:        #5AA2FF;
+  --accent-bg:     #0D2038;
+  --success:       #4CC274;  --success-bg: #0F2618;
+  --warning:       #E3A33B;  --warning-bg: #2A1F0B;
+  --danger:        #F2665F;  --danger-bg:  #2E1414;
+  --btn-primary-bg: #EDEDED; --btn-primary-fg: #0A0A0A; --btn-primary-hover: #CFCFCF;
+  --overlay:       rgba(0,0,0,0.6);
+  --chart-1: #6EA2F7; --chart-2: #3CC0B5; --chart-3: #F08A4B;
+  --chart-4: #D9A53A; --chart-5: #9CA3AF; --chart-6: #F06BA8;
+  --shadow-float: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.5);
+}
+
+html {
+  font-family: "Geist Variable", sans-serif;
+  color: var(--text);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.mono {
+  font-family: "Geist Mono Variable", monospace;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Typography styles strictly from §8.2 */
+.page-title {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.section-title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.body {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.ui {
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: 0;
+}
+
+.meta {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+
+.stat {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono-ui {
+  font-family: "Geist Mono Variable", monospace;
+  font-size: 12.5px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Focus styles strictly from §10.1 */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Running dot animation strictly from §9 and §10.4 */
+@keyframes running-dot-fade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-running-dot {
+  animation: running-dot-fade 1.2s infinite ease-in-out;
+}
+
+/* Loading skeleton strictly from §10.12 */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 1.4s infinite ease-in-out;
+}
+
+/* Drawer transition strictly from §10.7: translate-x 8px -> 0, opacity 0 -> 1 over 140ms */
+@keyframes drawer-in {
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-drawer {
+  animation: drawer-in 140ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
