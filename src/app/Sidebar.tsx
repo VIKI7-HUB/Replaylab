@@ -39,9 +39,15 @@ export const Sidebar: React.FC = () => {
   }, [collapsed]);
 
   useEffect(() => {
-    productHealth[THIS_PRODUCT]().then((h) => {
-      if (h.version) setVersion(`v${h.version}`);
-    });
+    // Retry until the service answers: it may still be starting (see EngineGate).
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      productHealth[THIS_PRODUCT]().then((h) => {
+        if (h.version) setVersion(`v${h.version}`);
+        else timer = setTimeout(load, 5000);
+      });
+    load();
+    return () => clearTimeout(timer);
   }, []);
 
   const navItemClass = ({ isActive }: { isActive: boolean }) =>

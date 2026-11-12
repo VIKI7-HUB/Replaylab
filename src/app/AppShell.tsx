@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { CommandPalette } from './CommandPalette';
+import { EngineGate } from './EngineGate';
 
 export const AppShell: React.FC = () => {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -19,7 +20,9 @@ export const AppShell: React.FC = () => {
 
         {/* Page Content: pt-8 px-6 pb-6 (§8.3 page padding: 24px all sides, 32px top) */}
         <main className="flex-1 overflow-y-auto pt-8 px-6 pb-6">
-          <Outlet />
+          <EngineGate>
+            <Outlet />
+          </EngineGate>
         </main>
       </div>
 

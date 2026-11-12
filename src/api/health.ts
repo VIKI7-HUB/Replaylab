@@ -68,3 +68,6 @@ export async function insightsHealth(): Promise<ServiceHealth> {
 
 /** Health of the product this console serves. */
 export const productHealth = { replaylab: replayLabHealth, stale: staleHealth };
+
+/** The service each product's console depends on, as the browser reaches it. */
+export const PRODUCT_SERVICE_URL = { replaylab: REPLAYLAB_URL, stale: STALE_URL };
