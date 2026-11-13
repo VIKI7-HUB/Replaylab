@@ -1,0 +1,33 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "client": {
+    "enable_logging": false
+  },
+  "config_store": { "enabled": false },
+  "logs_store": { "enabled": false },
+  "providers": {__PROVIDERS__},
+  "plugins": [
+    {
+      "name": "replaylab",
+      "path": "/plugins/replaylab.so",
+      "enabled": true,
+      "config": {
+        "db_path": "/app/data/replaylab.db",
+        "gateway_url": "http://127.0.0.1:8080",
+        "replay_auth_token": "",
+        "api_listen_addr": "127.0.0.1:8086",
+        "enabled": true,
+        "sampling_rate": 1.0,
+        "opt_in_keys": [],
+        "opt_out_keys": [],
+        "redact_pii": true,
+        "store_hashes_only": false,
+        "retention_days": 30,
+        "default_budget_cap": 5,
+        "max_stream_capture_bytes": 262144,
+        "max_queue_size": 10000,
+        "worker_count": 4
+      }
+    }
+  ]
+}

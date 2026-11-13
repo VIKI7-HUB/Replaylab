@@ -1,0 +1,19 @@
+# One public port for Render: the Replay Lab API (the plugin's own listener)
+# and the gateway's inference API share it.
+{
+	admin off
+	auto_https off
+}
+
+:{$PORT:10000} {
+	handle /replaylab/* {
+		reverse_proxy 127.0.0.1:8086 {
+			flush_interval -1 # stream experiment progress (SSE) as it happens
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
+	}
+}

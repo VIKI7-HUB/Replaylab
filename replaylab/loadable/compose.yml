@@ -1,0 +1,70 @@
+# Replay Lab loaded into a real bifrost-http gateway, with the deterministic
+# mock provider as its upstream. No API keys needed. From bifrost-backend/:
+#
+#   docker compose -f loadable/compose.yml up --build
+#
+# Works on Windows through Docker Desktop: the shared object is built and
+# loaded inside Linux containers. The first build compiles the gateway from
+# source and takes a few minutes.
+#
+#   gateway  bifrost-http (the target gateway version, from loadable/go.mod)
+#            on :8080, with Replay Lab enabled from loadable/demo/config.json
+#            and its API on :8086
+#   seed     sends 120 chat requests through the gateway, then starts an
+#            experiment whose replays also go through the gateway; it exits
+#            when done and prints the URLs to open
+name: replaylab-gateway
+
+services:
+  mockprovider:
+    build:
+      context: ..
+      dockerfile: Dockerfile.mockprovider
+    environment:
+      PORT: "8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 2s
+      retries: 15
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: loadable/Dockerfile
+      target: gateway
+    ports:
+      - "8080:8080" # gateway inference API (/v1/chat/completions)
+      - "8086:8086" # Replay Lab API (the plugin's own listener)
+    volumes:
+      # The plugin entry: path /plugins/replaylab.so (in the image), enabled,
+      # with every Replay Lab config key set.
+      - ./demo/config.json:/config/config.json:ro
+      - gateway-data:/app/data # captures survive `docker compose restart`
+    # bifrost-http reads config.json from its app dir, which is the data
+    # volume, so copy the mounted config there on every start.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - cp /config/config.json "$$APP_DIR/config.json" && exec /app/bifrost-http -app-dir "$$APP_DIR" -port "$$APP_PORT" -host 0.0.0.0
+    depends_on:
+      mockprovider:
+        condition: service_healthy
+    healthcheck:
+      # Healthy only once the plugin has loaded and its API is up.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8086/replaylab/health"]
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
+
+  seed:
+    build:
+      context: ..
+      dockerfile: loadable/Dockerfile
+      target: seed
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  gateway-data:

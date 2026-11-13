@@ -1,0 +1,40 @@
+services:
+  # Deterministic OpenAI-compatible mock for zero-cost demos.
+  mockprovider:
+    build:
+      context: .
+      dockerfile: Dockerfile.mockprovider
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: "8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Replay Lab: /replaylab API + capturing proxy at /v1/chat/completions.
+  replaylab:
+    build:
+      context: .
+      dockerfile: Dockerfile.replaylab
+    ports:
+      - "8085:8085"
+    environment:
+      PORT: "8085"
+      GATEWAY_URL: "http://mockprovider:8081"  # point at Bifrost for real traffic
+      DB_PATH: "/data/replaylab.db"
+    volumes:
+      - replaylab-data:/data
+    depends_on:
+      mockprovider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/replaylab/health"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  replaylab-data:

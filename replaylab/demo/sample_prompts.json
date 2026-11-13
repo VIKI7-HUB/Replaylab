@@ -1,0 +1,10 @@
+[
+  {"category": "summarization", "prompt": "Summarize the key architectural advantages of micro-frontends versus monolithic Single Page Applications in 3 sentences.", "expected_format": "text"},
+  {"category": "json_extraction", "prompt": "Extract the structured JSON object containing name, email, and company from: 'Contact Alice Smith at alice@example.com leading engineering at Acme Corp.'", "expected_format": "json"},
+  {"category": "classification", "prompt": "Classify the sentiment of this review into POSITIVE, NEUTRAL, or NEGATIVE: 'The API latency improved significantly after the latest patch.'", "expected_format": "text"},
+  {"category": "code_generation", "prompt": "Write an idiomatic Go function to safely drain a buffered channel with a context timeout.", "expected_format": "code"},
+  {"category": "support_chat", "prompt": "User query: How do I rotate my API keys without experiencing downtime in production?", "expected_format": "text"},
+  {"category": "data_transformation", "prompt": "Transform this CSV row 'id,name,tier' into a valid JSON object: '101,John Doe,Enterprise'", "expected_format": "json"},
+  {"category": "qa_reasoning", "prompt": "Explain why atomic CPU operations avoid race conditions in concurrent multi-threaded execution.", "expected_format": "text"},
+  {"category": "regex_generation", "prompt": "Generate a regular expression that validates ISO 8601 formatted UTC timestamps.", "expected_format": "code"}
+]
