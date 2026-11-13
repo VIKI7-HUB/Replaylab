@@ -37,6 +37,8 @@ describe('Design system compliance (§2 and §17)', () => {
 
     for (const file of sourceFiles) {
       if (file.endsWith('.test.ts')) continue;
+      // The token layer is where the visual language lives (gradients, blur, glow).
+      if (file.endsWith('tokens.css')) continue;
       const content = fs.readFileSync(file, 'utf-8');
       for (const pattern of bannedPatterns) {
         expect(

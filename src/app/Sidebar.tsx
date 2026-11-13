@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
 import { Tooltip } from '../components/Tooltip';
@@ -56,9 +56,9 @@ export const Sidebar: React.FC = () => {
   }, [product]);
 
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    `h-[30px] mx-2 px-2 rounded flex items-center text-[13px] transition-colors select-none ${
+    `h-[32px] mx-2 px-2.5 rounded-md flex items-center text-[13px] transition-colors select-none ${
       isActive
-        ? 'bg-bg-selected text-text font-medium'
+        ? 'nav-active'
         : 'text-text-2 hover:bg-bg-muted hover:text-text'
     }`;
 
@@ -82,11 +82,11 @@ export const Sidebar: React.FC = () => {
   }
 
   return (
-    <aside className="w-[232px] bg-bg-subtle border-r border-border h-screen flex flex-col justify-between shrink-0">
+    <aside className="w-[232px] bg-bg-subtle border-r border-border h-screen flex flex-col justify-between shrink-0 glass-bar">
       <div className="flex flex-col">
         {/* Top 56px */}
         <div className="h-14 px-4 flex items-center border-b border-border">
-          <span className="text-[14px] font-semibold text-text truncate">{CONSOLE_NAME}</span>
+          <span className="text-[14px] font-semibold text-text truncate brand-text">{CONSOLE_NAME}</span>
         </div>
 
         {/* Navigation list */}

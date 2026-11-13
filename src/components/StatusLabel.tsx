@@ -169,7 +169,7 @@ export const StatusLabel: React.FC<StatusLabelProps> = ({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 h-5 px-1.5 rounded-sm text-[12px] font-medium shrink-0 whitespace-nowrap ${toneClasses} ${className}`}
+      className={`status-pill inline-flex items-center gap-1.5 h-[22px] px-2.5 text-[12px] font-medium shrink-0 whitespace-nowrap ${toneClasses} ${className}`}
     >
       {icon}
       <span>{text}</span>

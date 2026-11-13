@@ -13,18 +13,18 @@ export const FreshnessMeter: React.FC<FreshnessMeterProps> = ({
 }) => {
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
 
-  let fillColor = 'bg-danger';
+  let fillColor = 'meter-danger';
   if (clamped >= 70) {
-    fillColor = 'bg-success';
+    fillColor = 'meter-success';
   } else if (clamped >= 40) {
-    fillColor = 'bg-warning';
+    fillColor = 'meter-warning';
   }
 
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
-      <div className="w-16 h-1 bg-bg-muted rounded-none overflow-hidden shrink-0">
+      <div className="w-20 h-1.5 bg-bg-muted rounded-full overflow-hidden shrink-0">
         <div
-          className={`h-full ${fillColor} transition-all duration-150`}
+          className={`h-full ${fillColor} rounded-full transition-all duration-300`}
           style={{ width: `${clamped}%` }}
         />
       </div>

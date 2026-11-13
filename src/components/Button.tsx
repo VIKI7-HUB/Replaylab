@@ -12,13 +12,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     let variantClasses = '';
     if (variant === 'primary') {
-      variantClasses = 'bg-[var(--btn-primary-bg)] text-[var(--btn-primary-fg)] hover:bg-[var(--btn-primary-hover)]';
+      variantClasses = 'btn-primary';
     } else if (variant === 'secondary') {
-      variantClasses = 'bg-bg border border-border-strong text-text hover:bg-bg-muted';
+      variantClasses = 'bg-bg-subtle border border-border-strong text-text hover:bg-bg-muted hover:border-accent';
     } else if (variant === 'ghost') {
       variantClasses = 'bg-transparent text-text-2 hover:bg-bg-muted hover:text-text';
     } else if (variant === 'danger') {
-      variantClasses = 'bg-bg border border-border-strong text-danger hover:bg-danger-bg';
+      variantClasses = 'bg-transparent border border-border-strong text-danger hover:bg-danger-bg hover:border-danger';
     }
 
     const disabledClasses = disabled || loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
