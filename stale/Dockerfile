@@ -1,7 +1,7 @@
 # Stale-Answer Detector API
 #
-# Build:  docker build -t stale-detector ./backend
-# Run:    docker run --rm -p 8000:8000 --env-file backend/.env stale-detector
+# Build:  docker build -t stale-detector ./stale
+# Run:    docker run --rm -p 8000:8000 --env-file stale/.env stale-detector
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -11,15 +11,14 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Install dependencies first so the layer caches across code changes.
-COPY backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code, demo, benchmark and the built-in dashboard.
-COPY backend/app ./app
-COPY backend/static ./static
-COPY backend/demo ./demo
-COPY backend/benchmark ./benchmark
-COPY backend/tests ./tests
+# Application code, demo, benchmark and tests.
+COPY app ./app
+COPY demo ./demo
+COPY benchmark ./benchmark
+COPY tests ./tests
 
 # The SQLite database lives in a volume so report history survives restarts.
 RUN mkdir -p /data

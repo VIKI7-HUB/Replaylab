@@ -59,7 +59,7 @@ Replay Lab has one core (`plugins/replaylab`) and three ways to run it. Only the
 | **bifrost-http plugin** | A shared object that the bifrost-http gateway loads from one `plugins` entry in its config ([loadable/README.md](loadable/README.md)) | You run the bifrost-http gateway and want capture without changing applications or adding a hop | Linux or macOS, built for one gateway release (now v1.6.11), in a dynamically linked gateway |
 | **Sidecar** | A capturing proxy in front of any OpenAI-compatible gateway (`cmd/replaylab`, [below](#run-as-a-sidecar)) | You can't load plugins: Windows hosts, the official static bifrost-http image, another gateway, or a gateway version the plugin isn't built for | Any |
 
-**Shared-object plugins need Linux or macOS.** Go can't load them on Windows. On Windows, build and run the bifrost-http plugin in containers (the gateway demo above, or `make loadable` through Docker Desktop or WSL), or use the sidecar, which runs natively (`run.bat`).
+**Shared-object plugins need Linux or macOS.** Go can't load them on Windows. On Windows, build and run the bifrost-http plugin in containers (the gateway demo above, or `make loadable` through Docker Desktop or WSL), or use the sidecar, which runs natively (`go run ./cmd/replaylab`).
 
 ## Run inside Bifrost
 
@@ -89,17 +89,16 @@ To add Replay Lab to a running bifrost-http gateway without writing Go, build th
 ## Run as a sidecar
 
 ```bash
-docker compose up --build          # mock provider on :8081, Replay Lab on :8085
-go run ./demo/generate_traffic     # send 200 requests through the proxy
+go run ./cmd/mockprovider         # terminal 1: mock provider on :8081
+go run ./cmd/replaylab            # terminal 2: Replay Lab on :8085
+go run ./demo/generate_traffic    # terminal 3: send 200 requests through the proxy
 ```
-
-Without Docker (Windows): `run.bat mock` in one terminal, `run.bat` in another, then `run.bat traffic`.
 
 Point any OpenAI SDK at `http://localhost:8085/v1` to capture its traffic. To replay through a real gateway, set `GATEWAY_URL` (and `REPLAY_AUTH_TOKEN` if replays need a key other than the captured virtual key).
 
 ## API
 
-Full reference with request/response shapes: [docs/replaylab.md](docs/replaylab.md). Postman collection: [demo/replaylab.postman_collection.json](demo/replaylab.postman_collection.json).
+Full reference with request/response shapes: [docs/replaylab.md](docs/replaylab.md).
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
@@ -144,12 +143,11 @@ The tests cover redaction, scoring, recommendations, budget-cap enforcement, ups
 | `cmd/replaylab/`, `cmd/mockprovider/` | The sidecar proxy, and the deterministic OpenAI-compatible mock used by the demos and tests |
 | `internal/mockprovider/` | The mock's model tiers and behaviours |
 | `loadable/` | The bifrost-http plugin: entry point, pinned module, container build, gateway smoke test and the one-command demo ([README](loadable/README.md)) |
-| `demo/` | Runnable demos (`bifrost_embedded`, `run_experiment`, `generate_traffic`), sample prompts and a Postman collection |
+| `demo/` | Runnable demos (`bifrost_embedded`, `run_experiment`, `generate_traffic`) and sample prompts |
 | `tests/` | Unit tests, real-Bifrost plugin tests and end-to-end experiment tests |
 | `docs/` | The API reference ([replaylab.md](docs/replaylab.md)) and the architecture decision record for the gateway plugin ([adr/](docs/adr/)) |
 | `DESIGN.md` | Why Replay Lab exists and how it's built |
-| `docker-compose.yml`, `Dockerfile.*` | The sidecar demo: the mock provider and Replay Lab in containers |
-| `Makefile`, `run.bat` | Shortcuts for building, testing and the demos (`run.bat` on Windows) |
+| `Makefile` | Shortcuts for building, testing and the demos |
 
 ## Limitations
 

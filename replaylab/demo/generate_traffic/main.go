@@ -4,7 +4,8 @@
 // are streamed; half of those ask for a usage chunk, so the rest show
 // estimated token counts.
 //
-//	docker compose up -d        # or: run.bat mock + run.bat
+//	go run ./cmd/mockprovider    # in one terminal
+//	go run ./cmd/replaylab       # in another
 //	go run ./demo/generate_traffic -n 200
 package main
 

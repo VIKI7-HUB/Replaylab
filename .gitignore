@@ -1,0 +1,37 @@
+# Secrets: only .env.example templates are committed
+.env
+.env.local
+*.env
+!.env.example
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Go
+replaylab/bin/
+replaylab/dist/
+*.exe
+*.test
+*.out
+
+# Node (database/ services)
+node_modules/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

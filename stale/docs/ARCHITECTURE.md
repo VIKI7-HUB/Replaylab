@@ -55,7 +55,7 @@ POST /v1/check  { "answer": "..." }
 
 | File | Responsibility |
 | :--- | :--- |
-| `app/main.py` | Routes, SSE streaming, pipeline orchestration, dashboard at `/` |
+| `app/main.py` | Routes, SSE streaming, pipeline orchestration |
 | `app/extractor.py` | Claim extraction — LLM structured output, regex fallback |
 | `app/triage.py` | Staleness-risk priors, temporal cues, skip decisions |
 | `app/queries.py` | Per-claim-type search strategy, official-domain resolution |
@@ -119,4 +119,3 @@ Per-claim scores are aggregated into the answer score weighted by `staleness_ris
 - Claims are verified **concurrently**; Tavily concurrency is bounded by a semaphore (`TAVILY_CONCURRENCY`, default 5).
 - The API is stateless apart from SQLite; swap `DATABASE_PATH` for a shared volume or a hosted DB.
 - The cache is per-instance today — moving it to Redis would make it shared across replicas.
-- The built-in dashboard is a single static file, so serving it costs nothing extra.

@@ -89,11 +89,11 @@ curl -X POST http://localhost:8000/v1/check -H "Content-Type: application/json" 
 | :--- | :--- |
 | `app/` | The FastAPI service. `main.py` holds the routes. The pipeline runs `extractor` → `triage` → `queries` and `tavily_client` → `verifier` → `scoring` → `corrector`, and `cache`, `db` and `usage` handle the search cache, report history and credit accounting. |
 | `tests/` | Unit and API tests (`pytest`), with no network calls and no credits spent |
-| `demo/` | `run_demo.py` (the terminal demo over `sample_answers.json`) and a Postman collection for the API |
+| `demo/` | `run_demo.py` (the terminal demo over `sample_answers.json`) and `run_demo_remote.py` (the same demo against a deployed API) |
 | `benchmark/` | 30 labeled claims, and the script that measures precision, recall and abstentions on them |
 | `docs/API.md` | The full request and response reference |
 | `.env.example` | Every setting; copy it to `.env` |
-| `Makefile`, `run.bat` | Shortcuts for setup, run, test, lint, demo and benchmark (`run.bat` on Windows) |
+| `Makefile` | Shortcuts for setup, run, test, lint, demo and benchmark |
 
 ## Tests
 
