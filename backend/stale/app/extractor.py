@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List
+from typing import List, Optional
 from app.schemas import Claim, ClaimType, QuotedSpan
 from app.llm import llm_client
 
@@ -154,6 +154,34 @@ def extract_claims_heuristic(text: str, max_claims: int = 10) -> List[Claim]:
     return claims
 
 
+def locate_span(text: str, claim_text: str, start_char=None, end_char=None) -> Optional[QuotedSpan]:
+    """Where a claim sits in the answer, or None if it can't be found.
+
+    LLMs often miscount character offsets, so the offsets they return are used
+    only when the text there actually is the claim. Otherwise the claim is
+    searched for in the answer: exactly, then ignoring case, then by its first
+    30 characters.
+    """
+    try:
+        s, e = int(start_char), int(end_char)
+        if 0 <= s < e <= len(text) and text[s:e].strip().lower() == claim_text.strip().lower():
+            return QuotedSpan(start=s, end=e)
+    except (TypeError, ValueError):
+        pass
+
+    pos = text.find(claim_text)
+    if pos == -1:
+        pos = text.lower().find(claim_text.lower())
+    if pos != -1:
+        return QuotedSpan(start=pos, end=pos + len(claim_text))
+
+    prefix = claim_text[:30].lower()
+    pos = text.lower().find(prefix) if prefix else -1
+    if pos != -1:
+        return QuotedSpan(start=pos, end=min(len(text), pos + len(claim_text)))
+    return None
+
+
 async def extract_claims(text: str, max_claims: int = 10) -> List[Claim]:
     """Extract atomic verifiable claims using LLM if available, else heuristic engine."""
     if llm_client.is_available:
@@ -174,21 +202,7 @@ async def extract_claims(text: str, max_claims: int = 10) -> List[Claim]:
                     except ValueError:
                         c_type = ClaimType.OTHER
 
-                    span = None
-                    if "start_char" in c and "end_char" in c:
-                        try:
-                            s = int(c["start_char"])
-                            e = int(c["end_char"])
-                            if 0 <= s < e <= len(text):
-                                span = QuotedSpan(start=s, end=e)
-                        except (ValueError, TypeError):
-                            pass
-
-                    # If span not valid, locate text in source
-                    if not span:
-                        pos = text.find(claim_text[:30])
-                        if pos != -1:
-                            span = QuotedSpan(start=pos, end=min(len(text), pos + len(claim_text)))
+                    span = locate_span(text, claim_text, c.get("start_char"), c.get("end_char"))
 
                     extracted.append(
                         Claim(

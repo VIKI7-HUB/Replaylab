@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MagnifyingGlassIcon, SunIcon, MoonIcon } from '@radix-ui/react-icons';
+import { HamburgerMenuIcon, MagnifyingGlassIcon, SunIcon, MoonIcon } from '@radix-ui/react-icons';
 import { useTheme } from './theme';
 import { Tooltip } from '../components/Tooltip';
 import { ServiceHealth, insightsHealth, replayLabHealth, staleHealth } from '../api/health';
 
 export interface TopBarProps {
   onOpenSearch: () => void;
+  /** Opens the sidebar as a slide-out menu (small screens only). */
+  onOpenMenu?: () => void;
 }
 
 const CHECKING: ServiceHealth = { status: 'degraded', text: 'Checking…' };
 
-export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch, onOpenMenu }) => {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
 
@@ -65,33 +67,42 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   };
 
   return (
-    <header className="h-12 bg-bg border-b border-border px-6 flex items-center justify-between shrink-0">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-[13px]">
+    <header className="h-12 bg-bg border-b border-border px-4 md:px-6 flex items-center justify-between gap-3 shrink-0">
+      {/* Menu button (small screens) and breadcrumb */}
+      <div className="flex items-center gap-1.5 text-[13px] min-w-0">
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label="Open menu"
+          className="md:hidden -ml-1 mr-1 w-8 h-8 inline-flex items-center justify-center rounded text-text-2 hover:bg-bg-muted hover:text-text transition-colors shrink-0"
+        >
+          <HamburgerMenuIcon className="w-[16px] h-[16px]" />
+        </button>
         {parent ? (
           <>
-            <span className="text-text-2">{parent}</span>
-            <span className="text-text-3">/</span>
-            <span className="text-text font-medium">{current}</span>
+            <span className="text-text-2 hidden sm:inline">{parent}</span>
+            <span className="text-text-3 hidden sm:inline">/</span>
+            <span className="text-text font-medium truncate">{current}</span>
           </>
         ) : (
-          <span className="text-text font-medium">{current}</span>
+          <span className="text-text font-medium truncate">{current}</span>
         )}
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 md:gap-4 shrink-0">
         {/* Search button */}
         <button
           type="button"
           onClick={onOpenSearch}
-          className="h-7 w-60 px-2.5 rounded border border-border-strong bg-bg flex items-center justify-between text-[13px] text-text-3 hover:bg-bg-muted transition-colors cursor-pointer"
+          aria-label="Search"
+          className="h-7 w-8 md:w-60 px-2 md:px-2.5 rounded border border-border-strong bg-bg flex items-center justify-between text-[13px] text-text-3 hover:bg-bg-muted transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2">
             <MagnifyingGlassIcon className="w-[15px] h-[15px] text-text-3 shrink-0" />
-            <span>Search…</span>
+            <span className="hidden md:inline">Search…</span>
           </div>
-          <kbd className="mono-ui text-[12px] bg-bg-muted px-1 rounded-sm border border-border">
+          <kbd className="hidden md:inline mono-ui text-[12px] bg-bg-muted px-1 rounded-sm border border-border">
             {/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}
           </kbd>
         </button>
