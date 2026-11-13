@@ -1,0 +1,17 @@
+# GitHub asks these owners to review any pull request that touches their paths.
+# (Merging still needs only green CI, so no one is blocked waiting for a review.)
+
+# Wiring: what the console sends to and expects from the backends
+/frontend/src/api/                @Shrinivas-go
+/frontend/src/app/routes.tsx      @Shrinivas-go
+/frontend/src/app/EngineGate.tsx  @Shrinivas-go
+/frontend/src/tests/contract.test.ts @Shrinivas-go
+/frontend/src/tests/fixtures/     @Shrinivas-go
+/frontend/vite.config.ts          @Shrinivas-go
+/frontend/.env.example            @Shrinivas-go
+
+# Backends, CI and deployment
+/backend/replaylab/               @Shrinivas-go
+/backend/stale/                   @Shrinivas-go
+/.github/                         @Shrinivas-go
+/render.yaml                      @Shrinivas-go

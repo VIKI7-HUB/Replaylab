@@ -19,8 +19,15 @@ import {
 } from '../api/replaylab';
 import { StaleHealthSchema, CheckReportSchema, HistoryItemSchema } from '../api/stale';
 
+// CI records fresh responses from the live backends into CONTRACT_FIXTURES_DIR
+// (.github/scripts/record-fixtures.sh); any response not recorded there falls
+// back to the committed one.
+const LIVE_DIR = process.env.CONTRACT_FIXTURES_DIR;
+
 function fixture(name: string): unknown {
-  return JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf-8'));
+  const live = LIVE_DIR ? path.join(LIVE_DIR, name) : '';
+  const file = live && fs.existsSync(live) ? live : path.join(__dirname, 'fixtures', name);
+  return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
 const cases: [string, z.ZodTypeAny, string][] = [

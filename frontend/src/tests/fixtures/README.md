@@ -3,10 +3,10 @@
 Real responses recorded from the backends, used by `../contract.test.ts`. Refresh them after a backend changes a response shape:
 
 ```bash
-# Replay Lab sidecar with the mock provider (llm-reliability-backend/replaylab)
+# Replay Lab sidecar with the mock provider (backend/replaylab)
 go run ./cmd/mockprovider & go run ./cmd/replaylab -port=8086 -gateway=http://localhost:8081
 go run ./demo/generate_traffic -proxy http://localhost:8086 -n 30
-# Stale API (llm-reliability-backend/stale): uvicorn app.main:app --port 8001
+# Stale API (backend/stale): uvicorn app.main:app --port 8001
 
 B=http://localhost:8086/replaylab S=http://localhost:8001/v1
 curl -s $B/health > replaylab.health.json

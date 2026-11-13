@@ -8,7 +8,7 @@ Every backend service for the LLM Reliability Console, in one repo. Each service
 | [`stale/`](stale/) | **Stale-Answer Detector**: checks the claims in an LLM answer against the live web with Tavily and returns a scored report and a corrected answer | Python, FastAPI | [README](stale/README.md), [API](stale/docs/API.md) |
 | [`database/`](database/) | **Insights** read database and API (in progress, database team) | PostgreSQL, TypeScript | [README](database/README.md) |
 
-The console (frontend) is a separate repo. It talks to these services only over HTTP, so frontend redesigns never touch this repo.
+The console lives next door in `../frontend/`. It talks to these services only over HTTP, so frontend redesigns never touch this folder.
 
 ## The contract with the frontend
 
@@ -43,8 +43,8 @@ cd replaylab && go vet ./... && go test ./tests/...
 cd stale && pytest -q
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs a secret scan, then each service's tests in its own job. `benchmark.yml` runs the Stale Detector's labeled benchmark against a deployed API, by hand.
+CI ([../.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs a secret scan, then each service's tests in its own job. `benchmark.yml` runs the Stale Detector's labeled benchmark against a deployed API, by hand.
 
 ## Deploy
 
-[`render.yaml`](render.yaml) is a Render Blueprint with one service per folder. Each service has a `buildFilter`, so a push rebuilds only the services whose folder changed. Secrets (`GEMINI_API_KEY`, `TAVILY_API_KEY`, `LLM_API_KEY`) are set in Render's dashboard, never in git.
+[`render.yaml`](../render.yaml) is a Render Blueprint with one service per folder. Each service has a `buildFilter`, so a push rebuilds only the services whose folder changed. Secrets (`GEMINI_API_KEY`, `TAVILY_API_KEY`, `LLM_API_KEY`) are set in Render's dashboard, never in git.

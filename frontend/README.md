@@ -5,7 +5,7 @@ One operator console for two products:
 - **Bifrost Replay Lab**: Captures, Experiments (new, detail with live progress) and Settings.
 - **Stale-Answer Detector**: Check an answer, Report and History.
 
-Both products are pages of this app, under `/replaylab/*` and `/stale/*`, and share its shell (sidebar, top bar, command palette and components). The services live in the backend repo (`llm-reliability-backend`) and are reached only over HTTP.
+Both products are pages of this app, under `/replaylab/*` and `/stale/*`, and share its shell (sidebar, top bar, command palette and components). The services live in `../backend/` and are reached only over HTTP.
 
 ## Changing the design (safe) vs changing the wiring (careful)
 

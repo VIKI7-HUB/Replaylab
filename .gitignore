@@ -1,0 +1,18 @@
+# Secrets: only .env.example templates are committed
+.env
+.env.local
+*.env
+!.env.example
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
