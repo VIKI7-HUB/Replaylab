@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { Skeleton } from '../components/States';
 import { PRODUCT_HOME } from './consoles';
-import { THIS_PRODUCT } from './product';
 
 // Lazy-loaded routes as required by §15
 const CapturesPage = lazy(() =>
@@ -28,6 +27,16 @@ const SettingsPage = lazy(() =>
   import('../features/replaylab/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
 
+const CheckPage = lazy(() =>
+  import('../features/stale/CheckPage').then((m) => ({ default: m.CheckPage }))
+);
+const ReportPage = lazy(() =>
+  import('../features/stale/ReportPage').then((m) => ({ default: m.ReportPage }))
+);
+const HistoryPage = lazy(() =>
+  import('../features/stale/HistoryPage').then((m) => ({ default: m.HistoryPage }))
+);
+
 const PageFallback = () => (
   <div className="space-y-6">
     <Skeleton height="h-8" width="w-48" />
@@ -40,7 +49,7 @@ export const AppRoutes: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<AppShell />}>
-        <Route index element={<Navigate to={PRODUCT_HOME[THIS_PRODUCT]} replace />} />
+        <Route index element={<Navigate to={PRODUCT_HOME.replaylab} replace />} />
 
         {/* Replay Lab routes */}
         <Route
@@ -88,6 +97,32 @@ export const AppRoutes: React.FC = () => {
           element={
             <Suspense fallback={<PageFallback />}>
               <SettingsPage />
+            </Suspense>
+          }
+        />
+
+        {/* Stale answers routes */}
+        <Route
+          path="stale/check"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <CheckPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="stale/reports/:id"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <ReportPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="stale/history"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <HistoryPage />
             </Suspense>
           }
         />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import { PageHeader } from '../../app/PageHeader';
@@ -52,7 +52,7 @@ export const CapturesPage: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  const fetchCaptures = async () => {
+  const fetchCaptures = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -71,11 +71,11 @@ export const CapturesPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [modelFilter, tagFilter, virtualKeyFilter, streamedFilter, page]);
 
   useEffect(() => {
     fetchCaptures();
-  }, [modelFilter, tagFilter, virtualKeyFilter, streamedFilter, page]);
+  }, [fetchCaptures]);
 
   // Handle drawer selection
   useEffect(() => {

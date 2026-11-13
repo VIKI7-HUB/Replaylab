@@ -50,7 +50,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               onOpenChange={(open) => {
                 if (!open) removeToast(t.id);
               }}
-              className={`fixed bottom-4 right-4 z-50 w-[360px] bg-bg p-3 shadow-float rounded border border-border border-l-[3px] ${borderToneColor} text-[13px] text-text transition-all data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out`}
+              className={`fixed bottom-4 right-4 z-50 w-[360px] bg-bg p-3 shadow-float rounded border border-border border-l-[3px] ${borderToneColor} text-[13px] text-text data-[state=open]:animate-rise-in data-[state=closed]:animate-fade-out data-[swipe=end]:animate-fade-out`}
             >
               {t.title && (
                 <ToastPrimitive.Title className="font-medium text-text mb-0.5">

@@ -10,6 +10,7 @@ import { Switch } from '../../components/Switch';
 import { Panel } from '../../components/Panel';
 import {
   getModels,
+  getCaptures,
   getConfig,
   createExperiment,
   ModelPrice,
@@ -50,12 +51,16 @@ export const NewExperimentPage: React.FC = () => {
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    getModels()
-      .then((m) => {
+    // Default the baseline to the model of the newest capture, so the form
+    // starts on traffic that exists. With no match it stays on "Any model".
+    Promise.all([getModels(), getCaptures({ limit: 1 }).catch(() => [])])
+      .then(([m, latest]) => {
         setModels(m);
-        if (m.length > 0 && !baselineModel) {
-          setBaselineModel(m[0].model);
-        }
+        const capture = latest[0];
+        if (!capture) return;
+        const names = [capture.model, `${capture.provider ?? ''}/${capture.model}`];
+        const match = m.find((model) => names.includes(model.model));
+        if (match) setBaselineModel((current) => current || match.model);
       })
       .catch(() => {});
 
@@ -97,7 +102,7 @@ export const NewExperimentPage: React.FC = () => {
   );
 
   const getPayload = (isDryRun: boolean) => ({
-    name: name.trim() || `exp-${Date.now().toString(36)}`,
+    name: name.trim() || `${baselineModel || 'any model'} vs ${candidateModels.join(', ')}`.slice(0, 120),
     original_model: baselineModel,
     candidate_models: candidateModels,
     filter_tag: tagFilter.trim() || undefined,
@@ -315,7 +320,7 @@ export const NewExperimentPage: React.FC = () => {
               />
 
               {enableJudge && (
-                <div className="space-y-4 pt-2">
+                <div className="space-y-4 pt-2 animate-fade-in">
                   <Field label="Judge model">
                     <Select
                       value={judgeModel}

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '@radix-ui/react-icons';
 import { Tooltip } from '../components/Tooltip';
 import { productHealth } from '../api/health';
-import { PRODUCT_NAMES, Product, consoleHref, isLocalPath } from './consoles';
-import { THIS_PRODUCT } from './product';
+import { CONSOLE_NAME, Product, productOfPath } from './consoles';
 
 const NAV: { product: Product; label: string; items: { to: string; label: string }[] }[] = [
   {
@@ -32,7 +31,8 @@ export const Sidebar: React.FC = () => {
   });
   const [version, setVersion] = useState<string>('v1.0.0');
 
-  const title = PRODUCT_NAMES[THIS_PRODUCT];
+  // The version shown is that of the product whose page is open.
+  const product: Product = productOfPath(useLocation().pathname) ?? 'replaylab';
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
@@ -41,14 +41,19 @@ export const Sidebar: React.FC = () => {
   useEffect(() => {
     // Retry until the service answers: it may still be starting (see EngineGate).
     let timer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
     const load = () =>
-      productHealth[THIS_PRODUCT]().then((h) => {
+      productHealth[product]().then((h) => {
+        if (cancelled) return;
         if (h.version) setVersion(`v${h.version}`);
         else timer = setTimeout(load, 5000);
       });
     load();
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [product]);
 
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
     `h-[30px] mx-2 px-2 rounded flex items-center text-[13px] transition-colors select-none ${
@@ -81,7 +86,7 @@ export const Sidebar: React.FC = () => {
       <div className="flex flex-col">
         {/* Top 56px */}
         <div className="h-14 px-4 flex items-center border-b border-border">
-          <span className="text-[14px] font-semibold text-text truncate">{title}</span>
+          <span className="text-[14px] font-semibold text-text truncate">{CONSOLE_NAME}</span>
         </div>
 
         {/* Navigation list */}
@@ -89,17 +94,11 @@ export const Sidebar: React.FC = () => {
           {NAV.map((group) => (
             <React.Fragment key={group.product}>
               <div className="text-[12px] font-medium text-text-3 px-4 pt-4 pb-1">{group.label}</div>
-              {group.items.map((item) =>
-                isLocalPath(item.to) ? (
-                  <NavLink key={item.to} to={item.to} className={navItemClass}>
-                    {item.label}
-                  </NavLink>
-                ) : (
-                  <a key={item.to} href={consoleHref(item.to)} className={navItemClass({ isActive: false })}>
-                    {item.label}
-                  </a>
-                )
-              )}
+              {group.items.map((item) => (
+                <NavLink key={item.to} to={item.to} className={navItemClass}>
+                  {item.label}
+                </NavLink>
+              ))}
             </React.Fragment>
           ))}
         </nav>

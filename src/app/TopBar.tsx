@@ -4,8 +4,7 @@ import { MagnifyingGlassIcon, SunIcon, MoonIcon } from '@radix-ui/react-icons';
 import { useTheme } from './theme';
 import { Tooltip } from '../components/Tooltip';
 import { ServiceHealth, insightsHealth, replayLabHealth, staleHealth } from '../api/health';
-import { PRODUCT_NAMES } from './consoles';
-import { THIS_PRODUCT } from './product';
+import { CONSOLE_NAME } from './consoles';
 
 export interface TopBarProps {
   onOpenSearch: () => void;
@@ -32,7 +31,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   // Compute breadcrumb
   const path = location.pathname;
   let parent = '';
-  let current = PRODUCT_NAMES[THIS_PRODUCT];
+  let current = CONSOLE_NAME;
 
   if (path.startsWith('/replaylab/captures')) {
     parent = 'Replay Lab';
@@ -94,13 +93,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
             <span>Search…</span>
           </div>
           <kbd className="mono-ui text-[12px] bg-bg-muted px-1 rounded-sm border border-border">
-            ⌘K
+            {/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}
           </kbd>
         </button>
 
-        {/* 3 Health dots 8px apart */}
+        {/* Health dots 8px apart, one per configured service */}
         <div className="flex items-center gap-2">
-          {health.map((h, i) => (
+          {health.filter((h) => h.configured !== false).map((h, i) => (
             <Tooltip key={i} content={h.text}>
               <span className={`w-2 h-2 rounded-full cursor-help ${getDotColor(h.status)}`} />
             </Tooltip>

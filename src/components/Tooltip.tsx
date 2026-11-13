@@ -19,7 +19,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ content, children, side = 'top
         <TooltipPrimitive.Content
           side={side}
           sideOffset={4}
-          className="z-50 max-w-xs rounded bg-bg px-2.5 py-1.5 text-[12px] text-text shadow-float border border-border animate-in fade-in-50"
+          className="z-50 max-w-xs rounded bg-bg px-2.5 py-1.5 text-[12px] text-text shadow-float border border-border animate-fade-in"
         >
           {content}
         </TooltipPrimitive.Content>

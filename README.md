@@ -1,8 +1,13 @@
-# Bifrost Replay Lab console
+# LLM Reliability Console
 
-The operator console for Bifrost Replay Lab: Captures, Experiments (new, detail with live progress) and Settings.
+One operator console for two products:
 
-It is one of two consoles that share the same shell (sidebar, top bar, command palette and components). The sidebar lists both products; the Stale-Answer Detector pages are links to that product's own console. Which product this app serves is set in `src/app/product.ts`.
+- **Bifrost Replay Lab**: Captures, Experiments (new, detail with live progress) and Settings.
+- **Stale-Answer Detector**: Check an answer, Report and History.
+
+Both products are pages of this one app, under `/replaylab/*` and `/stale/*`, and share its shell (sidebar, top bar, command palette and components). Each product talks to its own service, and a product's pages wait for that service to wake before they open (`src/app/EngineGate.tsx`).
+
+The same `frontend/` folder is kept in both the Replay Lab and the Stale-Answer Detector repositories, so each repository runs on its own. Change it in one and copy it to the other.
 
 ## Commands
 
@@ -12,10 +17,10 @@ It is one of two consoles that share the same shell (sidebar, top bar, command p
 | `npm run build` | Type-check, then build to `dist/` |
 | `npm run lint` | ESLint |
 | `npm test` | Unit tests (Vitest) |
-| `npm run e2e` | Playwright, against the running console and backend |
+| `npm run e2e` | Playwright, against the running console and both backends |
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and change what differs on your machine. Every setting has a default for a local setup.
+Copy `.env.example` to `.env.local` and change what differs on your machine. `.env.example` documents every setting.
 
-The top bar shows the health of both backends and of the Insights read API. Insights is optional: without it, search is unavailable and everything else works.
+The top bar shows the health of both services. The Insights read API is optional: without it, search is unavailable and everything else works.

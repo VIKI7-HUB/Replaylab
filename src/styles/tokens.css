@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root, [data-theme="light"] {
+  color-scheme: light;
   --bg:            #FFFFFF;  /* page, panels */
   --bg-subtle:     #FAFAFA;  /* sidebar, table header, code blocks */
   --bg-muted:      #F4F4F4;  /* hover row, skeleton, input disabled, progress track */
@@ -25,6 +26,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg:            #0A0A0A;
   --bg-subtle:     #111111;
   --bg-muted:      #1A1A1A;

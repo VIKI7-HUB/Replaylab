@@ -16,8 +16,9 @@ export type ReplayLabHealth = z.infer<typeof HealthSchema>;
 export const ConfigSchema = z.object({
   enabled: z.boolean().default(true),
   sampling_rate: z.number().default(1),
-  opt_in_keys: z.array(z.string()).default([]),
-  opt_out_keys: z.array(z.string()).default([]),
+  // A gateway with no keys configured may send null for these lists.
+  opt_in_keys: z.array(z.string()).nullish().transform((keys) => keys ?? []),
+  opt_out_keys: z.array(z.string()).nullish().transform((keys) => keys ?? []),
   redact_pii: z.boolean().default(false),
   store_hashes_only: z.boolean().default(false),
   retention_days: z.number().default(30),

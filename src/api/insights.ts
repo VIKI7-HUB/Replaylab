@@ -68,3 +68,28 @@ export async function searchGlobal(q: string, limit: number = 20): Promise<Searc
     url: hitPath(hit.kind, hit.id),
   }));
 }
+
+/** One page of report summaries from the read API, in the shape the history table shows. */
+const ReportSummarySchema = z
+  .object({
+    report_id: z.string().optional(),
+    id: z.string().optional(),
+    checked_at: z.string(),
+    question: z.string().optional().nullable(),
+    overall_freshness_score: z.number().default(0),
+    stale_count: z.number().default(0),
+    current_count: z.number().default(0),
+  })
+  .transform((r) => ({
+    report_id: r.report_id ?? r.id ?? '',
+    checked_at: r.checked_at,
+    question: r.question,
+    overall_freshness_score: r.overall_freshness_score,
+    stale_count: r.stale_count,
+    current_count: r.current_count,
+  }));
+
+export async function searchReports(q: string, limit: number = 50) {
+  const data = await getJson(`/api/stale/reports?q=${encodeURIComponent(q)}&limit=${limit}`);
+  return z.object({ items: z.array(ReportSummarySchema) }).parse(data).items;
+}

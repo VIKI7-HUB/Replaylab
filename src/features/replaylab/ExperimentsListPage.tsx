@@ -4,7 +4,7 @@ import { ColumnDef } from '@tanstack/react-table';
 import { PageHeader } from '../../app/PageHeader';
 import { Button } from '../../components/Button';
 import { Panel } from '../../components/Panel';
-import { DataTable } from '../../components/DataTable';
+import { DataTable, TruncatedCell } from '../../components/DataTable';
 import { StatusLabel } from '../../components/StatusLabel';
 import { EmptyState, ErrorState, TableSkeleton } from '../../components/States';
 import { Tooltip } from '../../components/Tooltip';
@@ -81,7 +81,9 @@ export const ExperimentsListPage: React.FC = () => {
         accessorKey: 'name',
         header: 'Name',
         cell: ({ getValue }) => (
-          <span className="font-medium text-text">{getValue<string>()}</span>
+          <span className="font-medium text-text">
+            <TruncatedCell text={getValue<string>()} maxWidth="max-w-[240px]" />
+          </span>
         ),
       },
       {

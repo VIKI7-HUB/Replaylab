@@ -99,7 +99,7 @@ export function DataTable<TData>({
                     <th
                       key={header.id}
                       onClick={header.column.getToggleSortingHandler()}
-                      className={`px-3 text-[12px] font-medium text-text-2 select-none ${
+                      className={`px-3 text-[12px] font-medium text-text-2 select-none whitespace-nowrap ${
                         isNumeric ? 'text-right' : 'text-left'
                       } ${header.column.getCanSort() ? 'cursor-pointer hover:text-text' : ''}`}
                     >
@@ -143,7 +143,7 @@ export function DataTable<TData>({
                         return (
                           <td
                             key={cell.id}
-                            className={`px-3 ${
+                            className={`px-3 whitespace-nowrap ${
                               isNumeric ? 'text-right tabular-nums' : 'text-left'
                             }`}
                           >
@@ -181,7 +181,7 @@ export function DataTable<TData>({
                       return (
                         <td
                           key={cell.id}
-                          className={`px-3 ${
+                          className={`px-3 whitespace-nowrap ${
                             isNumeric ? 'text-right tabular-nums' : 'text-left'
                           }`}
                         >

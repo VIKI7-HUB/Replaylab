@@ -51,11 +51,11 @@ export const Select: React.FC<SelectProps> = ({
 
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
-          className="z-50 min-w-[8rem] overflow-hidden rounded bg-bg text-text shadow-float border border-border animate-in fade-in-80"
+          className="z-50 min-w-[var(--radix-select-trigger-width)] max-h-[min(320px,var(--radix-select-content-available-height))] overflow-hidden rounded bg-bg text-text shadow-float border border-border animate-fade-in"
           position="popper"
           sideOffset={4}
         >
-          <SelectPrimitive.Viewport className="p-1">
+          <SelectPrimitive.Viewport className="p-1 max-h-[inherit] overflow-y-auto">
             {options.map((opt) => {
               const itemValue = opt.value === '' ? EMPTY_VALUE_SENTINEL : opt.value;
               return (

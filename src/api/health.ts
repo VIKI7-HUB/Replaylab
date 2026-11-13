@@ -1,12 +1,14 @@
 /**
- * Health of every service the console shell reports on, including the product
- * served by the other console. Only the fields the top bar shows are read.
+ * Health of every service the console shell reports on. Only the fields the
+ * top bar shows are read.
  */
 
 export interface ServiceHealth {
   status: 'healthy' | 'degraded' | 'offline';
   text: string;
   version?: string;
+  /** False for an optional service with no URL set; the top bar leaves it out. */
+  configured?: boolean;
 }
 
 const REPLAYLAB_URL = import.meta.env.VITE_REPLAYLAB_URL || 'http://localhost:8086';
@@ -57,7 +59,7 @@ export async function staleHealth(): Promise<ServiceHealth> {
 }
 
 export async function insightsHealth(): Promise<ServiceHealth> {
-  if (!INSIGHTS_URL) return { status: 'offline', text: 'Insights: not configured' };
+  if (!INSIGHTS_URL) return { status: 'offline', text: 'Insights: not configured', configured: false };
   try {
     const res = await fetch(`${INSIGHTS_URL}/api/health`);
     return res.ok

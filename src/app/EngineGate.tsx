@@ -5,11 +5,14 @@ import { Panel } from '../components/Panel';
 import { StatusLabel } from '../components/StatusLabel';
 import { ErrorState } from '../components/States';
 import { PRODUCT_SERVICE_URL, productHealth } from '../api/health';
-import { PRODUCT_NAMES } from './consoles';
-import { THIS_PRODUCT } from './product';
+import { useLocation } from 'react-router-dom';
+import { PRODUCT_NAMES, Product, productOfPath } from './consoles';
 
 /**
- * Holds the pages back until the product's service answers its health check.
+ * Holds a product's pages back until that product's service answers its health
+ * check. The console serves two products, each with its own service, so the
+ * gate follows the route: Replay Lab pages wait on the gateway, Stale-Answer
+ * Detector pages on its API.
  *
  * Hosted services sleep when idle, and the first request after that waits while
  * the service boots. Instead of every page showing a hung skeleton or a failed
@@ -26,12 +29,12 @@ const TYPICAL_START_MS = 60000; // the progress bar fills over this, then holds
 
 type Phase = 'checking' | 'starting' | 'ready' | 'failed';
 
-// Once the service has answered, later mounts (route changes) skip the check.
-let serviceAwake = false;
+// Once a service has answered, later visits to its pages skip the check.
+const serviceAwake: Record<Product, boolean> = { replaylab: false, stale: false };
 
-function healthyWithin(ms: number): Promise<boolean> {
+function healthyWithin(product: Product, ms: number): Promise<boolean> {
   return Promise.race([
-    productHealth[THIS_PRODUCT]().then((h) => h.status === 'healthy'),
+    productHealth[product]().then((h) => h.status === 'healthy'),
     new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
   ]);
 }
@@ -39,13 +42,18 @@ function healthyWithin(ms: number): Promise<boolean> {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const EngineGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [phase, setPhase] = useState<Phase>(serviceAwake ? 'ready' : 'checking');
+  const product = productOfPath(useLocation().pathname);
+  const awake = product === null || serviceAwake[product];
+  const [phase, setPhase] = useState<Phase>(awake ? 'ready' : 'checking');
   const [elapsedMs, setElapsedMs] = useState(0);
   const [attempt, setAttempt] = useState(0); // bumping it restarts the wait after a failure
   const startedAt = useRef(Date.now());
 
   useEffect(() => {
-    if (serviceAwake) return;
+    if (product === null || serviceAwake[product]) {
+      setPhase('ready');
+      return;
+    }
     let cancelled = false;
     startedAt.current = Date.now();
     setElapsedMs(0);
@@ -60,8 +68,8 @@ export const EngineGate: React.FC<{ children: React.ReactNode }> = ({ children }
 
     (async () => {
       while (!cancelled) {
-        if (await healthyWithin(ATTEMPT_TIMEOUT_MS)) {
-          serviceAwake = true;
+        if (await healthyWithin(product, ATTEMPT_TIMEOUT_MS)) {
+          serviceAwake[product] = true;
           if (!cancelled) setPhase('ready');
           return;
         }
@@ -78,13 +86,14 @@ export const EngineGate: React.FC<{ children: React.ReactNode }> = ({ children }
       clearTimeout(showTimer);
       clearInterval(tick);
     };
-  }, [attempt]);
+  }, [attempt, product]);
 
-  if (phase === 'ready') return <>{children}</>;
-  if (phase === 'checking') return null;
+  // `awake` covers the render right after a route change, before the effect runs.
+  if (awake || product === null) return <>{children}</>;
+  if (phase === 'ready' || phase === 'checking') return null;
 
-  const productName = PRODUCT_NAMES[THIS_PRODUCT];
-  const serviceUrl = PRODUCT_SERVICE_URL[THIS_PRODUCT];
+  const productName = PRODUCT_NAMES[product];
+  const serviceUrl = PRODUCT_SERVICE_URL[product];
 
   if (phase === 'failed') {
     return (

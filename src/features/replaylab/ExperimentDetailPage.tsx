@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   BarChart,
@@ -65,7 +65,7 @@ export const ExperimentDetailPage: React.FC = () => {
   // Judge sample expanded state
   const [expandedSamples, setExpandedSamples] = useState<Record<string, boolean>>({});
 
-  const fetchDetails = async () => {
+  const fetchDetails = useCallback(async () => {
     if (!id) return;
     try {
       const exp = await getExperimentById(id);
@@ -75,15 +75,16 @@ export const ExperimentDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchDetails();
-  }, [id]);
+  }, [fetchDetails]);
 
   // Subscribe to live SSE events if experiment is running
+  const status = experiment?.status;
   useEffect(() => {
-    if (!id || !experiment || experiment.status !== 'running') return;
+    if (!id || status !== 'running') return;
 
     const unsubscribe = subscribeExperiment(
       id,
@@ -103,7 +104,7 @@ export const ExperimentDetailPage: React.FC = () => {
     );
 
     return () => unsubscribe();
-  }, [id, experiment?.status]);
+  }, [id, status, fetchDetails]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -213,6 +214,9 @@ export const ExperimentDetailPage: React.FC = () => {
       color: `var(--chart-${(i % 5) + 1})`,
     })),
   ];
+
+  // The baseline is the captured sample itself: every capture replayed was a success.
+  const sampleSize = Math.max(0, ...experiment.results.map((r) => r.total_requests));
 
   // Latency chart data: p50 and p95 grouped vertical bars
   const latencyChartData = experiment.results.map((r) => ({
@@ -542,9 +546,7 @@ export const ExperimentDetailPage: React.FC = () => {
                   {/* 9. p50 latency */}
                   <tr className="h-9 hover:bg-bg-muted">
                     <td className="px-4 font-medium text-text">p50 latency</td>
-                    <td className="px-4 bg-bg-subtle tabular-nums">
-                      {formatDuration(experiment.results[0]?.original_avg_latency_ms)}
-                    </td>
+                    <td className="px-4 bg-bg-subtle text-text-3">—</td>
                     {experiment.results.map((r) => (
                       <td key={r.candidate_model} className="px-4 tabular-nums">
                         {formatDuration(r.p50_latency_ms)}
@@ -555,9 +557,7 @@ export const ExperimentDetailPage: React.FC = () => {
                   {/* 10. p95 latency */}
                   <tr className="h-9 hover:bg-bg-muted">
                     <td className="px-4 font-medium text-text">p95 latency</td>
-                    <td className="px-4 bg-bg-subtle tabular-nums">
-                      {formatDuration(experiment.results[0]?.original_avg_latency_ms)}
-                    </td>
+                    <td className="px-4 bg-bg-subtle text-text-3">—</td>
                     {experiment.results.map((r) => (
                       <td key={r.candidate_model} className="px-4 tabular-nums">
                         {formatDuration(r.p95_latency_ms)}
@@ -643,7 +643,7 @@ export const ExperimentDetailPage: React.FC = () => {
                   <tr className="h-9 hover:bg-bg-muted">
                     <td className="px-4 font-medium text-text">Successful replays</td>
                     <td className="px-4 bg-bg-subtle tabular-nums">
-                      {experiment.total_replays} / {experiment.total_replays}
+                      {sampleSize} / {sampleSize}
                     </td>
                     {experiment.results.map((r) => (
                       <td key={r.candidate_model} className="px-4 tabular-nums">
@@ -793,7 +793,7 @@ export const ExperimentDetailPage: React.FC = () => {
                               </div>
 
                               {isSampleOpen && (
-                                <div className="p-4 border-t border-border bg-bg-subtle space-y-4">
+                                <div className="p-4 border-t border-border bg-bg-subtle space-y-4 animate-fade-in">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="bg-bg p-3 rounded-md border border-border">
                                       <div className="text-[12px] font-medium text-text-2 mb-1.5">

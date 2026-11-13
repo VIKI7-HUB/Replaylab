@@ -30,8 +30,8 @@ export const Dialog: React.FC<DialogProps> = ({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[var(--overlay)] transition-opacity" />
-        <DialogPrimitive.Content className="fixed top-1/2 left-1/2 z-50 w-full max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-bg p-5 shadow-float border border-border focus:outline-none">
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[var(--overlay)] data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out" />
+        <DialogPrimitive.Content className="fixed top-1/2 left-1/2 z-50 w-full max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-bg p-5 shadow-float border border-border focus:outline-none data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out">
           <DialogPrimitive.Title className="section-title text-text mb-2">
             {title}
           </DialogPrimitive.Title>
