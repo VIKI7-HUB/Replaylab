@@ -43,7 +43,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle(replaylab.RoutePrefix, plugin.GetAPIHandler())
-	mux.Handle("/v1/chat/completions", plugin.ProxyHandler())
+	mux.Handle("/v1/chat/completions", allowBrowsers(plugin.ProxyHandler()))
 
 	server := &http.Server{
 		Addr:              ":" + *port,
@@ -73,4 +73,19 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown error: %v", err)
 	}
+}
+
+// allowBrowsers adds the CORS headers a browser needs to call the proxy from
+// another origin, as the operator console does when it sends sample traffic.
+func allowBrowsers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
