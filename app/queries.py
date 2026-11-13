@@ -107,7 +107,9 @@ def generate_search_spec(
     elif c_type == ClaimType.VERSION:
         topic = "general"
         should_extract = True
-        primary_query = f"{entity} latest release version changelog official".strip()
+        # Naming the year pulls in the current downloads and release pages
+        # rather than the notes of whichever old release ranks first.
+        primary_query = f"{entity} latest stable release version {year}".strip()
         secondary_query = f"{cleaned_text} current version release notes".strip()
 
     elif c_type == ClaimType.LAW_REGULATION:
