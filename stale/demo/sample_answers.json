@@ -1,0 +1,45 @@
+[
+  {
+    "id": "sample-1-openai-pricing",
+    "topic": "OpenAI API Pricing & Models",
+    "question": "What does it cost to use the GPT-4 API and what are its specifications?",
+    "answer": "OpenAI's flagship model GPT-4 costs $0.03 per 1K input tokens and $0.06 per 1K output tokens. It features an 8K token context window. In 1969 humans landed on the Moon.",
+    "expected_stale_claims": ["costs $0.03 per 1K input tokens", "8K token context window"],
+    "expected_timeless_claims": ["In 1969 humans landed on the Moon"]
+  },
+  {
+    "id": "sample-2-twitter-ceo",
+    "topic": "Tech Industry Leadership",
+    "question": "Who is currently the Chief Executive Officer of Twitter / X?",
+    "answer": "The Chief Executive Officer of Twitter is Elon Musk, who took direct operational control of the social media company in late 2022.",
+    "expected_stale_claims": ["Chief Executive Officer of Twitter is Elon Musk"]
+  },
+  {
+    "id": "sample-3-python-version",
+    "topic": "Programming Language Runtimes",
+    "question": "What is the latest stable version of Python available for production?",
+    "answer": "Python 3.9 is the latest stable release of the Python programming language and should be used for modern web frameworks.",
+    "expected_stale_claims": ["Python 3.9 is the latest stable release"]
+  },
+  {
+    "id": "sample-4-anthropic-claude",
+    "topic": "Anthropic Model Lineup",
+    "question": "What is Anthropic's flagship AI model and how much does it cost?",
+    "answer": "Anthropic's flagship intelligence model is Claude 2, priced at $8 per million input tokens and $24 per million output tokens with a 100k context window.",
+    "expected_stale_claims": ["flagship intelligence model is Claude 2"]
+  },
+  {
+    "id": "sample-5-nextjs-routing",
+    "topic": "Web Framework Architecture",
+    "question": "How does routing work in Next.js applications?",
+    "answer": "Next.js relies on the Pages Router architecture where every JavaScript file inside the /pages directory automatically becomes a route.",
+    "expected_stale_claims": ["relies on the Pages Router architecture"]
+  },
+  {
+    "id": "sample-6-us-tariffs-regulation",
+    "topic": "Trade Policy & Regulation",
+    "question": "What is the status of Section 301 tariffs on Chinese imports?",
+    "answer": "Section 301 tariffs remain frozen at early 2020 Phase One trade agreement levels without additional revisions.",
+    "expected_stale_claims": ["remain frozen at early 2020 Phase One trade agreement levels"]
+  }
+]
