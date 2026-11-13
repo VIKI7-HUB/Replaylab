@@ -16,6 +16,7 @@ class RequestUsage:
     tavily_calls: int = 0
     tavily_calls_saved: int = 0
     llm_calls: int = 0
+    llm_verdicts: int = 0  # claims whose verdict came from the LLM judge
 
 
 @dataclass
@@ -52,3 +53,8 @@ def record_llm_call() -> None:
     lifetime.llm_calls += 1
     if (u := _current.get()) is not None:
         u.llm_calls += 1
+
+
+def record_llm_verdict() -> None:
+    if (u := _current.get()) is not None:
+        u.llm_verdicts += 1

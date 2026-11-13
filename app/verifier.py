@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from app import usage
 from app.llm import llm_client
 from app.queries import official_domains_for
 from app.schemas import Claim, ClaimType, EvidenceItem, Verdict
@@ -298,7 +299,17 @@ async def verify_claim(claim: Claim, raw_results: List[Dict[str, Any]]) -> Claim
         claim.confidence = 0.3
         return claim
 
-    results = raw_results[:MAX_EVIDENCE_SOURCES]
+    # One entry per page: a search can return the same URL more than once.
+    seen_urls: set = set()
+    results = []
+    for r in raw_results:
+        url = r.get("url", "")
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        results.append(r)
+        if len(results) == MAX_EVIDENCE_SOURCES:
+            break
     claim.evidence = []
     for r in results:
         domain = get_domain(r.get("url", ""))
@@ -319,7 +330,9 @@ async def verify_claim(claim: Claim, raw_results: List[Dict[str, Any]]) -> Claim
         )
 
     used_llm = llm_client.is_available and await _llm_verify(claim, results, claim.evidence)
-    if not used_llm:
+    if used_llm:
+        usage.record_llm_verdict()
+    else:
         verdict, value, explanation, confidence, quotes = heuristic_verify(claim, results)
         claim.verdict, claim.current_value, claim.explanation, claim.confidence = verdict, value, explanation, confidence
         if quotes and quotes[0] and claim.evidence:

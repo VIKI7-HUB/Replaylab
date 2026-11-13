@@ -152,7 +152,9 @@ async def run_pipeline(
             llm_calls=request_usage.llm_calls,
             latency_ms=round((time.perf_counter() - start_time) * 1000, 2),
         ),
-        verification_mode="llm" if llm_client.is_available else "heuristic",
+        # "llm" only when the LLM judged at least one claim; if every LLM call
+        # failed, the verdicts are heuristic and the report says so.
+        verification_mode="llm" if request_usage.llm_verdicts > 0 else "heuristic",
         question=question,
         original_answer=answer,
     )
