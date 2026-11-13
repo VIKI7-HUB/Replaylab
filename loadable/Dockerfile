@@ -129,7 +129,8 @@ RUN V=$(cat /plugins/TARGET_GATEWAY_VERSION) \
 #   gateway   bifrost-http on 127.0.0.1:8080, Replay Lab's API on 127.0.0.1:8086
 #   router    Caddy on $PORT: /replaylab/* to the API, everything else to the gateway
 #
-# Needs GROQ_API_KEY (see loadable/render/config.json).
+# Needs a provider key: GEMINI_API_KEY, GROQ_API_KEY or both (see
+# loadable/render/start.sh, which writes the gateway config from them).
 FROM gateway AS render
 USER root
 RUN apk add --no-cache caddy

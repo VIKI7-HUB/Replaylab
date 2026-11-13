@@ -37,9 +37,13 @@ var KnownPricing = map[string]ModelPricing{
 	"deepseek-chat":      {InputPer1M: 0.14, OutputPer1M: 0.28},
 	"meta-llama-3.1-70b": {InputPer1M: 0.40, OutputPer1M: 0.40},
 	"meta-llama-3.1-8b":  {InputPer1M: 0.05, OutputPer1M: 0.05},
-	// Groq, keyed the way Bifrost routes them ("groq/<model>"), so the models
-	// GET /replaylab/models lists can be replayed as named. Only models open to
-	// a standard Groq key are listed.
+	// Hosted providers, keyed the way Bifrost routes them ("<provider>/<model>"),
+	// so the models GET /replaylab/models lists can be replayed as named.
+	// Google Gemini (list prices; all three have a free tier).
+	"gemini/gemini-3.8-flash":      {InputPer1M: 0.75, OutputPer1M: 3.75},
+	"gemini/gemini-3.5-flash-lite": {InputPer1M: 0.30, OutputPer1M: 2.50},
+	"gemini/gemini-3.1-flash-lite": {InputPer1M: 0.25, OutputPer1M: 1.50},
+	// Groq: only models open to a standard key.
 	"groq/openai/gpt-oss-120b": {InputPer1M: 0.15, OutputPer1M: 0.60},
 	"groq/openai/gpt-oss-20b":  {InputPer1M: 0.075, OutputPer1M: 0.30},
 	"groq/qwen/qwen3.8-27b":    {InputPer1M: 0.80, OutputPer1M: 4.00},
