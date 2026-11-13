@@ -15,6 +15,21 @@ Guidelines:
 """
 
 
+def _best_source(claim: Claim):
+    """Pick the most trustworthy evidence item for the citation.
+
+    Official and widely-trusted domains are preferred over whatever happened to
+    come back first, because search ranking is not the same thing as authority.
+    """
+    if not claim.evidence:
+        return None
+    return sorted(
+        claim.evidence,
+        key=lambda ev: (1 if ev.is_official else 0, ev.relevance_score or 0.0),
+        reverse=True,
+    )[0]
+
+
 async def generate_corrected_answer(
     original_text: str,
     claims: List[Claim],
@@ -31,8 +46,11 @@ async def generate_corrected_answer(
     citation_counter = 1
 
     for c in stale_claims:
-        top_url = c.evidence[0].url if c.evidence else "https://tavily.com"
-        top_title = c.evidence[0].title if c.evidence else "Live Web Ground Truth"
+        # Cite the strongest source, not just the first one: official/trusted domains win,
+        # then Tavily relevance breaks the tie.
+        best = _best_source(c)
+        top_url = best.url if best else "https://tavily.com"
+        top_title = best.title if best else "Live Web Ground Truth"
         citation_idx = citation_counter
         citation_counter += 1
         citation_map[citation_idx] = f"[{citation_idx}] [{top_title}]({top_url})"
