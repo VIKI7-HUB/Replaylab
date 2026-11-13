@@ -24,13 +24,24 @@ import { PRODUCT_NAMES, Product, productOfPath } from './consoles';
 const SHOW_AFTER_MS = 1000; // a warm service answers before this, so nothing flashes
 const RETRY_EVERY_MS = 3000;
 const ATTEMPT_TIMEOUT_MS = 20000;
-const GIVE_UP_AFTER_MS = 120000;
+const GIVE_UP_AFTER_MS = 30000;
 const TYPICAL_START_MS = 60000; // the progress bar fills over this, then holds
 
 type Phase = 'checking' | 'starting' | 'ready' | 'failed';
 
 // Once a service has answered, later visits to its pages skip the check.
 const serviceAwake: Record<Product, boolean> = { replaylab: false, stale: false };
+
+/**
+ * A service URL that points at loopback while the console itself is served
+ * from somewhere else means the deployment never configured it — waiting cannot
+ * fix that, so the gate says so instead of spinning.
+ */
+function isMisconfigured(serviceUrl: string): boolean {
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(serviceUrl)) return false;
+  const host = window.location.hostname;
+  return host !== 'localhost' && host !== '127.0.0.1';
+}
 
 function healthyWithin(product: Product, ms: number): Promise<boolean> {
   return Promise.race([
@@ -96,15 +107,39 @@ export const EngineGate: React.FC<{ children: React.ReactNode }> = ({ children }
   const serviceUrl = PRODUCT_SERVICE_URL[product];
 
   if (phase === 'failed') {
+    const misconfigured = isMisconfigured(serviceUrl);
     return (
       <div className="max-w-[560px]">
-        <PageHeader title="The engine didn't start" description={`${productName} is still not answering.`} />
+        <PageHeader
+          title={misconfigured ? `${productName} is not configured here` : "The engine didn't start"}
+          description={
+            misconfigured
+              ? `This deployment has no ${productName} service to talk to.`
+              : `${productName} is still not answering.`
+          }
+        />
         <Panel noPadding>
           <ErrorState
-            title="No response from the service"
-            message={`${serviceUrl} didn't answer within ${GIVE_UP_AFTER_MS / 60000} minutes.`}
+            title={misconfigured ? 'No service URL for this environment' : 'No response from the service'}
+            message={
+              misconfigured
+                ? `${serviceUrl} is a local address, but the console is served from ${window.location.host}. Set VITE_REPLAYLAB_URL (or VITE_STALE_URL) to the deployed service.`
+                : `${serviceUrl} didn't answer within ${GIVE_UP_AFTER_MS / 1000} seconds. It may still be booting — Retry, or continue to the page anyway.`
+            }
             onRetry={() => setAttempt((n) => n + 1)}
           />
+          <div className="px-4 pb-4 -mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                serviceAwake[product] = true;
+                setPhase('ready');
+              }}
+              className="text-[13px] text-accent hover:underline"
+            >
+              Continue to the page anyway
+            </button>
+          </div>
         </Panel>
       </div>
     );
