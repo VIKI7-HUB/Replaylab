@@ -29,7 +29,7 @@ Render's free tier sleeps when idle: the first request after a while takes about
 1. Push a branch and open a pull request into `main`.
 2. CI runs (`.github/workflows/ci.yml`): secret scan, Replay Lab tests, Stale tests, console lint/tests/build, and a **contract check** that runs the real backends and confirms the console still reads every response.
 3. `main` only accepts a pull request when CI passes. Changes to the console's API layer automatically ask the backend owner to review (`.github/CODEOWNERS`).
-4. After merging: Vercel redeploys the console, and Render redeploys only the backend service whose folder changed, and only once CI has passed on that commit. A failed build never replaces the live version.
+4. After merging, once CI has passed on that commit: GitHub Actions deploys the console to Vercel if `frontend/` changed (`.github/workflows/deploy-console.yml`), and Render redeploys only the backend service whose folder changed. A failed build never replaces the live version.
 
 ## Run it locally
 

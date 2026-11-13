@@ -19,7 +19,7 @@ git push -u origin design/new-sidebar
 # open the pull request on GitHub; merge when the checks are green
 ```
 
-Every pull request also gets a **Vercel preview link** (posted on the pull request), so you can see a console change live before it merges.
+To see a console change before it merges, run it locally: `cd frontend && npm run dev` (http://localhost:3000). With `frontend/.env.local` pointing at the live backends (see `.env.example`), you see it against real data.
 
 ## Who owns what
 
@@ -28,7 +28,7 @@ Every pull request also gets a **Vercel preview link** (posted on the pull reque
 | `frontend/` | Styles (`src/styles/`, `tailwind.config.ts`, `index.html`), components (`src/components/`), layout (`src/app/Sidebar.tsx`, `TopBar.tsx`, `AppShell.tsx`, `OverviewPage.tsx`, `CommandPalette.tsx`), the JSX and styling in `src/features/` | **Wiring**: `src/api/`, `src/app/routes.tsx`, `src/app/EngineGate.tsx`, `vite.config.ts`, `.env.example`. Owned by the backend owner; GitHub asks them to review any pull request touching these. |
 | `backend/replaylab/`, `backend/stale/` | Backend owner | Response shapes: the console reads them. Adding a field is safe; renaming or removing one breaks the console. |
 | `backend/database/` | Database team | The Insights API contract in `backend/database/README.md`, which the console already calls. |
-| `.github/`, `render.yaml` | Backend owner | These decide what CI checks and how things deploy. |
+| `.github/`, `render.yaml` | Backend owner | These decide what CI checks and how things deploy. The console deploys through `.github/workflows/deploy-console.yml`, which needs the `VERCEL_TOKEN` repository secret. |
 
 ### For console design changes
 
