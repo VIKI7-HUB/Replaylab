@@ -91,3 +91,30 @@ func TestModelsFallsBackToPriceBookWithoutAGatewayList(t *testing.T) {
 		t.Fatalf("listed %d models, want the whole price book (%d)", len(got), len(replaylab.KnownPricing))
 	}
 }
+
+func TestProviderOutageIsRetriedAndSucceeds(t *testing.T) {
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1)%2 == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"This model is currently experiencing high demand. Please try again in 10ms."}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(okCompletion))
+	}))
+	defer upstream.Close()
+	lab := newLab(t, upstream.URL)
+	seed(t, lab.Storage(), 2, "gpt-4o")
+
+	exp, err := lab.Engine().StartExperiment(replaylab.CreateExperimentRequest{
+		OriginalModel: "gpt-4o", CandidateModels: []string{"gpt-4o-mini"}, SampleSize: 2, BudgetCapDollars: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := waitTerminal(t, lab.Storage(), exp.ID)
+	if got := final.Results[0]; got.FailedRequests != 0 || got.SuccessfulRequests != 2 {
+		t.Fatalf("want 2 successes and no failures, got %d ok / %d failed", got.SuccessfulRequests, got.FailedRequests)
+	}
+}

@@ -40,7 +40,7 @@ var KnownPricing = map[string]ModelPricing{
 	// Hosted providers, keyed the way Bifrost routes them ("<provider>/<model>"),
 	// so the models GET /replaylab/models lists can be replayed as named.
 	// Google Gemini (list prices; all three have a free tier).
-	"gemini/gemini-3.8-flash":      {InputPer1M: 0.75, OutputPer1M: 3.75},
+	"gemini/gemini-3.6-flash":      {InputPer1M: 0.75, OutputPer1M: 3.75},
 	"gemini/gemini-3.5-flash-lite": {InputPer1M: 0.30, OutputPer1M: 2.50},
 	"gemini/gemini-3.1-flash-lite": {InputPer1M: 0.25, OutputPer1M: 1.50},
 	// Groq: only models open to a standard key.

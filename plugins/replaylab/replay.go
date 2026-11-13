@@ -77,7 +77,7 @@ func NewReplayEngine(storage Storage, gatewayURL string) *ReplayEngine {
 		storage:    storage,
 		scorer:     NewQualityScorer(),
 		gatewayURL: strings.TrimRight(gatewayURL, "/"),
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: 120 * time.Second}, // reasoning models can take a minute or more
 		activeRuns: make(map[string]context.CancelFunc),
 		subs:       make(map[string]map[chan ReplayEvent]struct{}),
 	}
@@ -682,9 +682,9 @@ func (re *ReplayEngine) replayOne(ctx context.Context, targetModel string, c *Ca
 
 // postChat sends a non-streaming chat completion through the gateway and
 // returns the parsed response and the call's latency in milliseconds. A
-// rate-limited call (HTTP 429) is retried after the wait the provider asks
-// for, so a provider's per-minute limit slows a run down instead of failing
-// its replays. The latency reported is that of the last attempt alone.
+// rate-limited call (HTTP 429) or a momentary provider outage (502, 503, 504)
+// is retried after the wait the provider asks for, so a per-minute limit or a
+// demand spike slows a run down instead of failing its replays. The latency reported is that of the last attempt alone.
 func (re *ReplayEngine) postChat(ctx context.Context, body []byte, token string) (chatCompletion, int64, error) {
 	for attempt := 0; ; attempt++ {
 		parsed, latency, wait, err := re.postChatOnce(ctx, body, token)
@@ -729,7 +729,8 @@ func (re *ReplayEngine) postChatOnce(ctx context.Context, body []byte, token str
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		err = fmt.Errorf("upstream returned HTTP %d: %s", resp.StatusCode, truncate(string(raw), errorExcerptLength))
-		if resp.StatusCode == http.StatusTooManyRequests {
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 			retryAfter = rateLimitWait(resp.Header.Get("Retry-After"), raw)
 		}
 		return chatCompletion{}, latency, retryAfter, err
