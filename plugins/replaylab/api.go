@@ -110,7 +110,19 @@ func (h *APIHandler) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.queue.Config())
+	writeJSON(w, http.StatusOK, configForJSON(h.queue.Config()))
+}
+
+// configForJSON makes the key lists serialise as [] rather than null, so
+// clients can treat them as arrays without a nil check.
+func configForJSON(cfg Config) Config {
+	if cfg.OptInKeys == nil {
+		cfg.OptInKeys = []string{}
+	}
+	if cfg.OptOutKeys == nil {
+		cfg.OptOutKeys = []string{}
+	}
+	return cfg
 }
 
 // handlePutConfig merges the supplied fields into the current config, so
@@ -137,7 +149,7 @@ func (h *APIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.queue.UpdateConfig(updated)
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, configForJSON(updated))
 }
 
 type modelPrice struct {
@@ -146,10 +158,26 @@ type modelPrice struct {
 	OutputPer1MTokens float64 `json:"output_per_1m_tokens"`
 }
 
+// handleModels lists the models an experiment can name, with their prices.
+// When the gateway publishes its model list, only priced models it can route
+// are returned, so every model offered is one a replay can actually reach.
+// Otherwise (a gateway without /v1/models, or one that routes nothing the
+// price book knows) the whole price book is returned.
 func (h *APIHandler) handleModels(w http.ResponseWriter, r *http.Request) {
+	routable := h.engine.RoutableModels(r.Context())
 	out := make([]modelPrice, 0, len(KnownPricing))
 	for name, p := range KnownPricing {
+		if routable != nil {
+			if _, ok := routable[name]; !ok {
+				continue
+			}
+		}
 		out = append(out, modelPrice{Model: name, InputPer1MTokens: p.InputPer1M, OutputPer1MTokens: p.OutputPer1M})
+	}
+	if len(out) == 0 && routable != nil {
+		for name, p := range KnownPricing {
+			out = append(out, modelPrice{Model: name, InputPer1MTokens: p.InputPer1M, OutputPer1MTokens: p.OutputPer1M})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
 	writeJSON(w, http.StatusOK, out)

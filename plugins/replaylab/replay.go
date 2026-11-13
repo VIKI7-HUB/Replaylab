@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,6 +58,10 @@ type ReplayEngine struct {
 
 	subsMu sync.Mutex
 	subs   map[string]map[chan ReplayEvent]struct{}
+
+	modelsMu      sync.Mutex
+	models        map[string]struct{} // gateway's /v1/models ids; nil when unknown
+	modelsFetched time.Time
 
 	replaysTotal  atomic.Int64
 	replaysFailed atomic.Int64
@@ -675,11 +681,33 @@ func (re *ReplayEngine) replayOne(ctx context.Context, targetModel string, c *Ca
 }
 
 // postChat sends a non-streaming chat completion through the gateway and
-// returns the parsed response and the call's latency in milliseconds.
+// returns the parsed response and the call's latency in milliseconds. A
+// rate-limited call (HTTP 429) is retried after the wait the provider asks
+// for, so a provider's per-minute limit slows a run down instead of failing
+// its replays. The latency reported is that of the last attempt alone.
 func (re *ReplayEngine) postChat(ctx context.Context, body []byte, token string) (chatCompletion, int64, error) {
+	for attempt := 0; ; attempt++ {
+		parsed, latency, wait, err := re.postChatOnce(ctx, body, token)
+		if wait <= 0 || attempt >= maxRateLimitRetries {
+			return parsed, latency, err
+		}
+		if wait == rateLimitNoHint {
+			wait = rateLimitBaseWait << attempt
+		}
+		select {
+		case <-ctx.Done():
+			return chatCompletion{}, latency, ctx.Err()
+		case <-time.After(min(wait, rateLimitMaxWait)):
+		}
+	}
+}
+
+// postChatOnce makes one attempt. retryAfter is positive only for a
+// rate-limited response: the wait the provider asked for, or rateLimitNoHint.
+func (re *ReplayEngine) postChatOnce(ctx context.Context, body []byte, token string) (parsed chatCompletion, latency int64, retryAfter time.Duration, err error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, re.gatewayURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return chatCompletion{}, 0, err
+		return chatCompletion{}, 0, 0, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-Replaylab-Replay", "1") // lets a capturing proxy skip replays and judge calls
@@ -689,21 +717,121 @@ func (re *ReplayEngine) postChat(ctx context.Context, body []byte, token string)
 
 	start := time.Now()
 	resp, err := re.httpClient.Do(httpReq)
-	latency := time.Since(start).Milliseconds()
+	latency = time.Since(start).Milliseconds()
 	if err != nil {
-		return chatCompletion{}, latency, err
+		return chatCompletion{}, latency, 0, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
 	if err != nil {
-		return chatCompletion{}, latency, err
+		return chatCompletion{}, latency, 0, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return chatCompletion{}, latency, fmt.Errorf("upstream returned HTTP %d: %s", resp.StatusCode, truncate(string(raw), errorExcerptLength))
+		err = fmt.Errorf("upstream returned HTTP %d: %s", resp.StatusCode, truncate(string(raw), errorExcerptLength))
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter = rateLimitWait(resp.Header.Get("Retry-After"), raw)
+		}
+		return chatCompletion{}, latency, retryAfter, err
 	}
-	parsed, err := parseChatCompletion(raw)
-	return parsed, latency, err
+	parsed, err = parseChatCompletion(raw)
+	return parsed, latency, 0, err
+}
+
+const (
+	maxRateLimitRetries = 4
+	rateLimitBaseWait   = 2 * time.Second
+	rateLimitMaxWait    = 20 * time.Second
+	// rateLimitNoHint marks a 429 that did not say how long to wait.
+	rateLimitNoHint = time.Duration(-1)
+	// rateLimitMargin is added to a provider's hint so the retry lands after
+	// the limit window has actually moved on.
+	rateLimitMargin = 250 * time.Millisecond
+)
+
+// tryAgainIn matches the wait a provider states in a rate-limit message, e.g.
+// Groq's "Please try again in 7.66s" or "in 450ms".
+var tryAgainIn = regexp.MustCompile(`(?i)try again in\s+(?:(\d+)m)?([0-9.]+)(ms|s)`)
+
+// rateLimitWait reads how long a 429 asks the caller to wait: the Retry-After
+// header (seconds) when present, else the wait stated in the error body.
+func rateLimitWait(retryAfterHeader string, body []byte) time.Duration {
+	if secs, err := strconv.ParseFloat(strings.TrimSpace(retryAfterHeader), 64); err == nil && secs >= 0 {
+		return time.Duration(secs*float64(time.Second)) + rateLimitMargin
+	}
+	if m := tryAgainIn.FindSubmatch(body); m != nil {
+		n, err := strconv.ParseFloat(string(m[2]), 64)
+		if err == nil {
+			unit := time.Second
+			if strings.EqualFold(string(m[3]), "ms") {
+				unit = time.Millisecond
+			}
+			wait := time.Duration(n * float64(unit))
+			if len(m[1]) > 0 {
+				mins, _ := strconv.Atoi(string(m[1]))
+				wait += time.Duration(mins) * time.Minute
+			}
+			return wait + rateLimitMargin
+		}
+	}
+	return rateLimitNoHint
+}
+
+// routableModelsTTL is how long the gateway's model list is reused.
+const routableModelsTTL = time.Minute
+
+// RoutableModels returns the model ids the gateway lists at /v1/models, lower
+// cased. It returns nil when the gateway does not publish a list (the
+// endpoint is missing, fails or is empty), so callers can tell "unknown" from
+// "none".
+func (re *ReplayEngine) RoutableModels(ctx context.Context) map[string]struct{} {
+	re.modelsMu.Lock()
+	defer re.modelsMu.Unlock()
+	if !re.modelsFetched.IsZero() && time.Since(re.modelsFetched) < routableModelsTTL {
+		return re.models
+	}
+	models := re.fetchRoutableModels(ctx)
+	if models == nil && re.models != nil {
+		return re.models // keep the last good list through a transient failure
+	}
+	re.models, re.modelsFetched = models, time.Now()
+	return models
+}
+
+func (re *ReplayEngine) fetchRoutableModels(ctx context.Context) map[string]struct{} {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, re.gatewayURL+"/v1/models", nil)
+	if err != nil {
+		return nil
+	}
+	if re.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+re.authToken)
+	}
+	resp, err := re.httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxUpstreamBody)).Decode(&list); err != nil || len(list.Data) == 0 {
+		return nil
+	}
+	models := make(map[string]struct{}, len(list.Data))
+	for _, m := range list.Data {
+		id := strings.ToLower(m.ID)
+		models[id] = struct{}{}
+		// Some providers list ids as "models/<id>"; record the plain form too.
+		models[strings.Replace(id, "/models/", "/", 1)] = struct{}{}
+	}
+	return models
 }
 
 // replayToken picks the credential for a replay: the configured token, else
