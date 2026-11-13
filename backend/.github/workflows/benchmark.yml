@@ -1,0 +1,61 @@
+name: benchmark deployed api
+# Manual trigger: run the labeled benchmark against the live service and publish
+# the numbers as a job summary. It spends a small number of Tavily credits, so
+# it is intentionally not scheduled automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      api:
+        description: "Base URL of the running Stale-Answer Detector service"
+        default: "https://stale-detector-api.onrender.com"
+        required: false
+      concurrency:
+        description: "Parallel checks (keep it polite)"
+        default: "3"
+        required: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stale
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Health check
+        run: |
+          curl -sS --max-time 30 "${{ github.event.inputs.api }}/v1/health" || true
+
+      - name: Benchmark the deployed service
+        id: bench
+        run: |
+          python benchmark/run_benchmark_remote.py \
+            --api "${{ github.event.inputs.api }}" \
+            --concurrency "${{ github.event.inputs.concurrency }}" \
+            --save benchmark/remote_results.json | tee benchmark_output.txt
+
+      - name: Publish metrics to the run summary
+        if: always()
+        run: |
+          {
+            echo "## Remote benchmark — ${{ github.event.inputs.api }}"
+            echo ""
+            echo '```'
+            cat benchmark_output.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: stale/benchmark/remote_results.json
+          if-no-files-found: ignore

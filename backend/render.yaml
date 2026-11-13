@@ -1,0 +1,49 @@
+# Render Blueprint for every backend service in this repo. Each service has a
+# buildFilter, so a push that only touches one service's folder rebuilds only
+# that service.
+services:
+  # Replay Lab: the real bifrost-http gateway with Replay Lab loaded as a
+  # plugin, routed to Google Gemini (free tier). See the "render" stage at the
+  # end of replaylab/loadable/Dockerfile.
+  - type: web
+    name: replaylab-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: ./replaylab/loadable/Dockerfile
+    dockerContext: ./replaylab
+    healthCheckPath: /replaylab/health
+    buildFilter:
+      paths:
+        - replaylab/**
+    envVars:
+      # A Google AI Studio key (free tier). The gateway routes to every provider
+      # whose key is set; GROQ_API_KEY is also understood.
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # Stale-Answer Detector API, with Google Gemini (free tier) as its LLM.
+  - type: web
+    name: stale-detector-api
+    runtime: python
+    plan: free
+    rootDir: stale
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /v1/health
+    buildFilter:
+      paths:
+        - stale/**
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: gemini-3.5-flash-lite
+
+  # The database team's services (database/) get their entries here when
+  # they land. See database/README.md.
