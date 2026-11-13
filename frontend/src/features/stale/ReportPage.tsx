@@ -114,7 +114,11 @@ export const ReportPage: React.FC = () => {
     let curIndex = 0;
 
     sortedClaims.forEach((claim, idx) => {
-      const { start, end } = claim.quoted_span;
+      // Spans can overlap or run past the answer (older reports kept the
+      // LLM's own offsets). Clip each to what is left, so no text repeats.
+      const start = Math.max(claim.quoted_span.start, curIndex);
+      const end = Math.min(claim.quoted_span.end, raw.length);
+      if (end <= start) return;
       // Add text before this claim
       if (start > curIndex) {
         segments.push(raw.slice(curIndex, start));
@@ -318,21 +322,21 @@ export const ReportPage: React.FC = () => {
                 {/* Collapsible header row */}
                 <div
                   onClick={toggle}
-                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-bg-muted"
+                  className="p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer hover:bg-bg-muted"
                 >
-                  <div className="flex items-center gap-3 truncate pr-4">
+                  <div className="flex items-center gap-3 min-w-0 sm:truncate sm:pr-4">
                     <ChevronRightIcon
                       className={`w-4 h-4 text-text-2 shrink-0 transition-transform ${
                         isOpen ? 'rotate-90' : ''
                       }`}
                     />
-                    <span className="text-[13px] text-text truncate">{claim.text}</span>
+                    <span className="text-[13px] text-text sm:truncate">{claim.text}</span>
                     <span className="text-[12px] text-text-3 shrink-0">
                       {claim.claim_type}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-4 shrink-0 pl-7 sm:pl-0">
                     <FreshnessMeter score={claim.freshness_score} />
                     <StatusLabel
                       value={claim.skipped ? 'skipped' : claim.verdict}

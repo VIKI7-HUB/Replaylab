@@ -25,7 +25,12 @@ const NAV: { product: Product; label: string; items: { to: string; label: string
   },
 ];
 
-export const Sidebar: React.FC = () => {
+export interface SidebarProps {
+  /** Below md: whether the slide-out menu is open. Ignored on larger screens. */
+  mobileOpen?: boolean;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false }) => {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
@@ -62,9 +67,10 @@ export const Sidebar: React.FC = () => {
         : 'text-text-2 hover:bg-bg-muted hover:text-text'
     }`;
 
-  if (collapsed) {
+  // The collapsed rail is a desktop feature; the mobile menu always opens in full.
+  if (collapsed && !mobileOpen) {
     return (
-      <aside className="w-14 bg-bg-subtle border-r border-border h-screen flex flex-col justify-between py-3 shrink-0">
+      <aside className="hidden md:flex w-14 bg-bg-subtle border-r border-border h-screen flex-col justify-between py-3 shrink-0">
         <div className="flex justify-center">
           <Tooltip content="Expand sidebar" side="right">
             <button
@@ -82,7 +88,11 @@ export const Sidebar: React.FC = () => {
   }
 
   return (
-    <aside className="w-[232px] bg-bg-subtle border-r border-border h-screen flex flex-col justify-between shrink-0 glass-bar">
+    <aside
+      className={`w-[232px] bg-bg-subtle border-r border-border h-screen flex flex-col justify-between shrink-0 glass-bar fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0 ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
       <div className="flex flex-col">
         {/* Top 56px */}
         <div className="h-14 px-4 flex items-center border-b border-border">
@@ -115,7 +125,7 @@ export const Sidebar: React.FC = () => {
             type="button"
             onClick={() => setCollapsed(true)}
             aria-label="Collapse sidebar"
-            className="w-7 h-7 inline-flex items-center justify-center rounded text-text-2 hover:bg-bg-muted hover:text-text transition-colors"
+            className="w-7 h-7 hidden md:inline-flex items-center justify-center rounded text-text-2 hover:bg-bg-muted hover:text-text transition-colors"
           >
             <DoubleArrowLeftIcon className="w-[15px] h-[15px]" />
           </button>
