@@ -101,23 +101,23 @@ export const CapturesPage: React.FC = () => {
   }, [paramId, captures]);
 
   // With nothing captured yet, a visitor can send real requests through the
-  // gateway from here. They go to the priciest model the gateway routes, so
-  // an experiment has cheaper candidates to try.
+  // gateway from here. They go to the priciest model that answers, so an
+  // experiment has cheaper candidates to try.
   const handleSendSample = async () => {
-    const baseline = [...models].sort(
-      (a, b) => b.output_per_1m_tokens - a.output_per_1m_tokens
-    )[0];
-    if (!baseline) {
+    const ranked = [...models]
+      .sort((a, b) => b.output_per_1m_tokens - a.output_per_1m_tokens)
+      .map((m) => m.model);
+    if (ranked.length === 0) {
       toast('The gateway lists no models to send traffic to.', 'warning');
       return;
     }
     setSampleSent(0);
     try {
-      const answered = await sendSampleTraffic(baseline.model, setSampleSent);
-      if (answered === 0) {
-        toast(`${baseline.model} answered none of the sample requests.`, 'danger');
+      const { model, answered } = await sendSampleTraffic(ranked, setSampleSent);
+      if (!model) {
+        toast('No model answered. The provider may be overloaded; try again in a minute.', 'danger');
       } else {
-        toast(`${answered} of ${SAMPLE_TRAFFIC_COUNT} sample requests answered by ${baseline.model}`, 'success');
+        toast(`${answered} of ${SAMPLE_TRAFFIC_COUNT} sample requests answered by ${model}`, answered > 0 ? 'success' : 'danger');
       }
       // Captures are written in the background a moment after each response.
       await new Promise((resolve) => setTimeout(resolve, 800));
@@ -379,7 +379,9 @@ export const CapturesPage: React.FC = () => {
               </Button>
               {sampleSent !== null && (
                 <span className="text-[12px] text-text-2 tabular-nums" role="status">
-                  Sent {sampleSent} of {SAMPLE_TRAFFIC_COUNT}…
+                  {sampleSent === 0
+                    ? 'Finding a model that answers…'
+                    : `Sent ${sampleSent} of ${SAMPLE_TRAFFIC_COUNT}…`}
                 </span>
               )}
             </div>

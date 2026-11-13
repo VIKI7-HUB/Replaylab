@@ -402,35 +402,60 @@ const SAMPLE_PROMPTS: { prompt: string; json?: boolean }[] = [
 
 export const SAMPLE_TRAFFIC_COUNT = SAMPLE_PROMPTS.length;
 
+const SAMPLE_REQUEST_TIMEOUT_MS = 45000;
+const SAMPLE_PROBE_TIMEOUT_MS = 20000;
+
+async function chat(model: string, content: string, json: boolean, timeoutMs: number): Promise<boolean> {
+  const body: Record<string, unknown> = { model, messages: [{ role: 'user', content }] };
+  if (json) body.response_format = { type: 'json_object' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    await res.text();
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export interface SampleTrafficResult {
+  model: string | null;
+  answered: number;
+}
+
 /**
  * Sends the sample requests through the gateway, one at a time so a provider's
- * rate limit is not tripped. Resolves with how many the gateway answered.
+ * rate limit is not tripped. `models` is in order of preference: the first one
+ * that answers a short probe becomes the baseline for all the requests, so a
+ * model that is briefly overloaded is skipped rather than failing the run.
  */
 export async function sendSampleTraffic(
-  model: string,
+  models: string[],
   onProgress?: (sent: number) => void
-): Promise<number> {
+): Promise<SampleTrafficResult> {
+  let baseline: string | null = null;
+  for (const model of models) {
+    if (await chat(model, 'Reply with the single word: ready.', false, SAMPLE_PROBE_TIMEOUT_MS)) {
+      baseline = model;
+      break;
+    }
+  }
+  if (!baseline) return { model: null, answered: 0 };
+
   let answered = 0;
   for (let i = 0; i < SAMPLE_PROMPTS.length; i++) {
     const { prompt, json } = SAMPLE_PROMPTS[i];
-    const body: Record<string, unknown> = {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-    };
-    if (json) body.response_format = { type: 'json_object' };
-    try {
-      const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) answered++;
-      await res.text();
-    } catch (err) {
-      if (answered === 0 && i === 0) throw normalizeError(err, 'Bifrost Replay Lab', BASE_URL);
-    }
+    if (await chat(baseline, prompt, Boolean(json), SAMPLE_REQUEST_TIMEOUT_MS)) answered++;
     onProgress?.(i + 1);
-    if (i < SAMPLE_PROMPTS.length - 1) await new Promise((resolve) => setTimeout(resolve, 600));
+    if (i < SAMPLE_PROMPTS.length - 1) await new Promise((resolve) => setTimeout(resolve, 400));
   }
-  return answered;
+  return { model: baseline, answered };
 }
