@@ -1,0 +1,1 @@
+{"id":"exp-431cfb35-b","name":"fixture","status":"pending","original_model":"gpt-4o","candidate_models":["gpt-4o-mini"],"sample_size":5,"budget_cap_dollars":50,"dry_run":true,"created_at":"2026-11-13T10:38:09.9230608Z","monthly_request_volume":5640,"total_replays":5,"completed_replays":0,"spent_dollars":0.00016350000000000002,"spent_tokens":0,"results":[],"recommendations":[]}

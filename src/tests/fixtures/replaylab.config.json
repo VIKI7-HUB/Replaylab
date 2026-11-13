@@ -1,0 +1,1 @@
+{"enabled":true,"sampling_rate":1,"opt_in_keys":[],"opt_out_keys":[],"redact_pii":true,"store_hashes_only":false,"retention_days":30,"max_queue_size":10000,"worker_count":4,"db_path":"replaylab.db","gateway_url":"http://localhost:8081","default_budget_cap":50,"max_stream_capture_bytes":262144}

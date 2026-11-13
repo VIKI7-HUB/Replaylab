@@ -1,0 +1,1 @@
+{"status":"healthy","service":"stale-answer-detector","version":"1.1.0","tavily_configured":true,"llm_configured":false,"verification_mode":"heuristic","database":"sqlite","tavily_calls_total":2,"tavily_calls_saved":2,"llm_calls_total":0}

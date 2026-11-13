@@ -7,7 +7,7 @@ export default defineConfig({
   use: {
     channel: 'chrome',
     headless: true,
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
     viewport: { width: 1280, height: 720 },
     ignoreHTTPSErrors: true,
   },
