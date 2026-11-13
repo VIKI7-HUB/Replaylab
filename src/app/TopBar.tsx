@@ -4,7 +4,6 @@ import { MagnifyingGlassIcon, SunIcon, MoonIcon } from '@radix-ui/react-icons';
 import { useTheme } from './theme';
 import { Tooltip } from '../components/Tooltip';
 import { ServiceHealth, insightsHealth, replayLabHealth, staleHealth } from '../api/health';
-import { CONSOLE_NAME } from './consoles';
 
 export interface TopBarProps {
   onOpenSearch: () => void;
@@ -31,7 +30,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSearch }) => {
   // Compute breadcrumb
   const path = location.pathname;
   let parent = '';
-  let current = CONSOLE_NAME;
+  let current = 'Overview';
 
   if (path.startsWith('/replaylab/captures')) {
     parent = 'Replay Lab';

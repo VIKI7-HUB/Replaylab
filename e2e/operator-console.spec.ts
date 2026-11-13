@@ -50,6 +50,8 @@ test.describe('LLM Reliability Console', () => {
     await page.route('http://localhost:8090/api/**', (route) => route.abort('connectionfailed'));
 
     await page.goto('/');
+    await expect(page.locator('h1')).toHaveText('LLM Reliability Console');
+    await page.locator('button:has-text("Open Captures")').click();
     await expect(page).toHaveURL(/.*\/replaylab\/captures/);
     await expect(page.locator('h1')).toHaveText('Captures');
     await expect(page.locator('th:has-text("Model")')).toBeVisible();

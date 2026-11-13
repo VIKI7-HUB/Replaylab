@@ -385,3 +385,52 @@ export async function getExperimentReport(id: string): Promise<string> {
   }
 }
 
+/**
+ * Sample chat requests, the same mix the demo traffic generator sends. They go
+ * through the gateway like any client's requests, so the captures are real.
+ */
+const SAMPLE_PROMPTS: { prompt: string; json?: boolean }[] = [
+  { prompt: 'Summarize the key architectural advantages of micro-frontends versus monolithic Single Page Applications in 3 sentences.' },
+  { prompt: "Extract a JSON object with name, email and company from: 'Contact Alice Smith at alice@example.com leading engineering at Acme Corp.'", json: true },
+  { prompt: "Classify the sentiment of this review as positive, negative or neutral, in one word: 'The checkout flow is fast but the search results are often irrelevant.'" },
+  { prompt: 'Write a regular expression that matches ISO 8601 dates such as 2026-03-14, and explain it in two sentences.' },
+  { prompt: 'A customer writes: "I was charged twice for my subscription this month." Draft a short, polite support reply.' },
+  { prompt: 'Explain the difference between optimistic and pessimistic locking, and when to use each, in under 80 words.' },
+  { prompt: 'Convert this CSV row to a JSON object with keys id, city and population: "42,Lisbon,545000"', json: true },
+  { prompt: 'Write a Go function that reverses a slice of integers in place.' },
+];
+
+export const SAMPLE_TRAFFIC_COUNT = SAMPLE_PROMPTS.length;
+
+/**
+ * Sends the sample requests through the gateway, one at a time so a provider's
+ * rate limit is not tripped. Resolves with how many the gateway answered.
+ */
+export async function sendSampleTraffic(
+  model: string,
+  onProgress?: (sent: number) => void
+): Promise<number> {
+  let answered = 0;
+  for (let i = 0; i < SAMPLE_PROMPTS.length; i++) {
+    const { prompt, json } = SAMPLE_PROMPTS[i];
+    const body: Record<string, unknown> = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+    };
+    if (json) body.response_format = { type: 'json_object' };
+    try {
+      const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) answered++;
+      await res.text();
+    } catch (err) {
+      if (answered === 0 && i === 0) throw normalizeError(err, 'Bifrost Replay Lab', BASE_URL);
+    }
+    onProgress?.(i + 1);
+    if (i < SAMPLE_PROMPTS.length - 1) await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+  return answered;
+}

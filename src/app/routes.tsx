@@ -1,8 +1,8 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { OverviewPage } from './OverviewPage';
 import { AppShell } from './AppShell';
 import { Skeleton } from '../components/States';
-import { PRODUCT_HOME } from './consoles';
 
 // Lazy-loaded routes as required by §15
 const CapturesPage = lazy(() =>
@@ -49,7 +49,7 @@ export const AppRoutes: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<AppShell />}>
-        <Route index element={<Navigate to={PRODUCT_HOME.replaylab} replace />} />
+        <Route index element={<OverviewPage />} />
 
         {/* Replay Lab routes */}
         <Route

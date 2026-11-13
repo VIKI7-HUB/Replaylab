@@ -117,6 +117,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
 
             <Command.Group heading="Go to" className="text-[12px] font-medium text-text-3 px-2 py-1.5">
               <Command.Item
+                onSelect={() => handleSelect(() => go('/'))}
+                className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
+              >
+                Overview
+              </Command.Item>
+              <Command.Item
                 onSelect={() => handleSelect(() => go('/replaylab/captures'))}
                 className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center cursor-pointer data-[selected=true]:bg-bg-selected"
               >

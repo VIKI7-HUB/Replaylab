@@ -91,6 +91,9 @@ export const Sidebar: React.FC = () => {
 
         {/* Navigation list */}
         <nav className="flex flex-col pt-2">
+          <NavLink to="/" end className={(state) => `mt-2 ${navItemClass(state)}`}>
+            Overview
+          </NavLink>
           {NAV.map((group) => (
             <React.Fragment key={group.product}>
               <div className="text-[12px] font-medium text-text-3 px-4 pt-4 pb-1">{group.label}</div>
