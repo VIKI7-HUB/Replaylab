@@ -11,12 +11,19 @@ export interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Lowercase, because cmdk may normalize item values to lowercase when matching the selection.
+const resultValue = (item: SearchResultItem, i: number) =>
+  `result-${i}-${item.kind}-${item.id}`.toLowerCase();
+
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChange }) => {
   const navigate = useNavigate();
   const { toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // The highlighted item. cmdk picks the first match itself, but not for
+  // results that arrive later from the API, so highlight the first one then.
+  const [selected, setSelected] = useState('');
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -47,6 +54,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
       try {
         const res = await searchGlobal(query);
         setResults(res);
+        if (res[0]) setSelected(resultValue(res[0], 0));
       } catch {
         setResults([]);
       } finally {
@@ -78,7 +86,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
         onClick={() => onOpenChange(false)}
       />
       <div className="relative z-10 w-full max-w-[560px] max-h-[440px] bg-bg rounded-md shadow-float border border-border flex flex-col overflow-hidden animate-rise-in">
-        <Command label="Command Palette" className="flex flex-col h-full">
+        <Command
+          label="Command Palette"
+          value={selected}
+          onValueChange={setSelected}
+          className="flex flex-col h-full"
+        >
           <div className="h-11 px-3 border-b border-border flex items-center gap-2 shrink-0">
             <MagnifyingGlassIcon className="w-[15px] h-[15px] text-text-3 shrink-0" />
             <Command.Input
@@ -91,15 +104,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
           </div>
 
           <Command.List className="overflow-y-auto p-2 max-h-[360px]">
-            <Command.Empty className="py-6 text-center text-[13px] text-text-3">
-              {loading ? 'Searching…' : 'No results found.'}
-            </Command.Empty>
+            {results.length === 0 && (
+              <Command.Empty className="py-6 text-center text-[13px] text-text-3">
+                {loading ? 'Searching…' : 'No results found.'}
+              </Command.Empty>
+            )}
 
+            {/* The Insights API already matched these, so cmdk must not filter them
+                again: its client-side filter drops items that mount after the query
+                changes (cmdk 1.0.0), which is exactly how these results arrive. */}
             {results.length > 0 && (
-              <Command.Group heading="Results" className="text-[12px] font-medium text-text-3 px-2 py-1.5">
-                {results.map((item) => (
+              <Command.Group forceMount heading="Results" className="text-[12px] font-medium text-text-3 px-2 py-1.5">
+                {results.map((item, i) => (
                   <Command.Item
-                    key={`${item.kind}-${item.id}`}
+                    forceMount
+                    key={`${item.kind}-${item.id}-${i}`}
+                    value={resultValue(item, i)}
                     onSelect={() => handleSelect(() => go(item.url))}
                     className="h-9 px-2 rounded-sm text-[13px] text-text flex items-center justify-between cursor-pointer data-[selected=true]:bg-bg-selected"
                   >
