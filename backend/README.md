@@ -6,7 +6,7 @@ Every backend service for the LLM Reliability Console, in one repo. Each service
 | :--- | :--- | :--- | :--- |
 | [`replaylab/`](replaylab/) | **Bifrost Replay Lab**: captures gateway traffic, replays it against cheaper models under a budget cap, and returns a switch verdict with projected savings | Go, Bifrost plugin | [README](replaylab/README.md), [API](replaylab/docs/replaylab.md) |
 | [`stale/`](stale/) | **Stale-Answer Detector**: checks the claims in an LLM answer against the live web with Tavily and returns a scored report and a corrected answer | Python, FastAPI | [README](stale/README.md), [API](stale/docs/API.md) |
-| [`database/`](database/) | **Insights** read database and API (in progress, database team) | PostgreSQL, TypeScript | [README](database/README.md) |
+| [`database/`](database/) | **Insights**: a PostgreSQL 17 read copy of both services, its sync worker, and the read API the console uses for search and analytics | PostgreSQL, TypeScript (Node 22) | [README](database/README.md) |
 
 The console lives next door in `../frontend/`. It talks to these services only over HTTP, so frontend redesigns never touch this folder.
 
