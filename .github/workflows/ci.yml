@@ -131,6 +131,42 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # The Insights database (backend/database/): typecheck, then unit tests plus
+  # the integration suite, which runs the sync worker against fake backends and
+  # the read API against a real Postgres 17.
+  database:
+    name: Insights database (Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/database
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: insights
+          POSTGRES_PASSWORD: insights
+          POSTGRES_DB: insights_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U insights -d insights_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://insights:insights@localhost:5432/insights_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/database/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Image builds
+        run: docker build -t insights .
+
   # The safety net between the two halves: run the real backends, record their
   # responses, and check the console's schemas against them. A backend change
   # that breaks the console, or a console change that misreads a backend, fails

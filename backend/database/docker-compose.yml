@@ -1,0 +1,60 @@
+# `docker compose up` in backend/database/ starts Postgres, applies migrations,
+# and runs the sync worker and the Insights API (http://localhost:8090).
+# The backends run separately; by default this reaches them on the host.
+name: insights
+
+services:
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_USER: insights
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insights}
+      POSTGRES_DB: insights
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insights -d insights"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: .
+    command: ["migrate"]
+    environment: &env
+      DATABASE_URL: postgres://insights:${POSTGRES_PASSWORD:-insights}@postgres:5432/insights
+      DATABASE_SSL: disable
+      REPLAYLAB_URL: ${REPLAYLAB_URL:-http://host.docker.internal:8086}
+      STALE_URL: ${STALE_URL:-http://host.docker.internal:8000}
+      STALE_API_KEY: ${STALE_API_KEY:-}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
+      API_PORT: 8090
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  sync:
+    build: .
+    command: ["sync"]
+    environment: *env
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    build: .
+    command: ["api"]
+    environment: *env
+    ports:
+      - "${API_PORT:-8090}:8090"
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  pgdata:

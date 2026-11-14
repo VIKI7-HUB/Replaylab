@@ -50,5 +50,39 @@ services:
       - key: LLM_MODEL
         value: gemini-3.5-flash-lite
 
-  # The database team's services (backend/database/) get their entries here
-  # when they land, with a buildFilter on backend/database/**.
+  # Insights (backend/database/): the read API and the sync worker in one
+  # process ("all" mode), filling the Postgres below from the two services'
+  # HTTP APIs. The console reads it through VITE_INSIGHTS_URL.
+  - type: web
+    name: insights-api
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./backend/database/Dockerfile
+    dockerContext: ./backend/database
+    healthCheckPath: /api/health
+    buildFilter:
+      paths:
+        - backend/database/**
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: insights-db
+          property: connectionString
+      - key: REPLAYLAB_URL
+        value: https://replaylab-gateway.onrender.com
+      - key: STALE_URL
+        value: https://stale-detector-api.onrender.com
+      # Free services sleep after 15 idle minutes. Polling more often than that
+      # would keep both backends awake around the clock and use up the free
+      # hours; every start also syncs at once, so data is fresh on wake-up.
+      - key: SYNC_INTERVAL_MS
+        value: "1200000"
+
+databases:
+  - name: insights-db
+    plan: free
+    databaseName: insights
+    user: insights
+    postgresMajorVersion: "17"
