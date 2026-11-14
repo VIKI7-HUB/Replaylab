@@ -43,7 +43,7 @@ To see a console change before it merges, run it locally: `cd frontend && npm ru
 ### For database work
 
 - Work only in `backend/database/`. Read the services through their HTTP APIs, never their SQLite files.
-- When you're ready to deploy, add a service to `render.yaml` with `buildFilter` on `backend/database/**`, and a job to `.github/workflows/ci.yml`.
+- It deploys as the `insights-api` service in `render.yaml` (build filter `backend/database/**`), after the `Insights database (Postgres)` CI job passes. Run `npm test` with `TEST_DATABASE_URL` set to also run the integration suite locally; see `backend/database/README.md`.
 
 ## If something breaks on the live site
 
