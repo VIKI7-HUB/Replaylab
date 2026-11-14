@@ -1,0 +1,9 @@
+{
+  "name": "llm-reliability-pitch",
+  "private": true,
+  "description": "Build tooling for the hackathon pitch deck (not part of the app).",
+  "dependencies": {
+    "pptxgenjs": "4.0.1",
+    "puppeteer-core": "23.11.1"
+  }
+}

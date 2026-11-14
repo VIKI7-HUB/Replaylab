@@ -1,0 +1,262 @@
+{
+  "title": "LLM Reliability — product walkthrough",
+  "brand": {
+    "kicker": "LLM RELIABILITY"
+  },
+  "theme": {
+    "preset": "violet",
+    "accent": "7C5CFF",
+    "onAccent": "FFFFFF",
+    "callout": "EFEBFF",
+    "panel": "F4F3FA"
+  },
+  "section": "Geek Room Global AI Hackathon 2026",
+  "footer": "Bifrost track + Tavily track  ·  github.com/VIKI7-HUB/llm-reliability",
+  "slides": [
+    {
+      "type": "cover",
+      "title": "LLM Reliability",
+      "subtitle": "Is the cheaper model safe?\nIs this answer still true?",
+      "body": "Two production checks for LLM apps, one console:\nBifrost Replay Lab and the Stale-Answer Detector.",
+      "byline": "Bifrost track + Tavily track  |  November 2026",
+      "date": "llm-reliability-console.vercel.app",
+      "image": "console-live.png"
+    },
+    {
+      "type": "cards",
+      "numbering": "01",
+      "title": "Teams guess on cost and on freshness today",
+      "subtitle": "The two failure modes we target, and what each one costs.",
+      "cards": [
+        {
+          "heading": "Overpaying for models",
+          "body": "Teams stay on a flagship model\nbecause nobody can prove a cheaper\none is safe on their own traffic.",
+          "emphasis": "Cost: the gap between tiers, every month."
+        },
+        {
+          "heading": "Stale answers",
+          "body": "Models state prices, versions and\nCEOs from training data, with full\nconfidence, long after they change.",
+          "emphasis": "Cost: user trust, one wrong fact at a time."
+        }
+      ],
+      "callout": "Both need evidence, not opinion: your own traffic, and the live web."
+    },
+    {
+      "type": "section",
+      "title": "Bifrost Replay Lab",
+      "subtitle": "A switch verdict from your own production traffic."
+    },
+    {
+      "type": "flow",
+      "title": "Replay Lab turns recorded traffic into a verdict",
+      "subtitle": "Native Bifrost plugin (LLMPlugin + HTTPTransportPlugin), or a sidecar proxy.",
+      "steps": [
+        {
+          "heading": "Capture",
+          "body": "Off the hot path;\na full buffer drops\nthe capture, never\nslows the request."
+        },
+        {
+          "heading": "Protect",
+          "body": "Emails, phones, cards\nand tokens redacted\nbefore disk."
+        },
+        {
+          "heading": "Replay",
+          "body": "Same params, temp 0,\nagainst cheaper\ncandidates."
+        },
+        {
+          "heading": "Decide",
+          "body": "JSON contract,\nsimilarity, p50/p95,\nerrors, cost."
+        }
+      ],
+      "banner": {
+        "heading": "Hard budget cap",
+        "body": "Projected cost checked before every call  •  stops with partial results  •  dry-run estimate first"
+      },
+      "callout": "Output: SAFE_TO_SWITCH, SWITCH_WITH_CAUTION or DO_NOT_SWITCH."
+    },
+    {
+      "type": "chart",
+      "chart": "bar",
+      "title": "gpt-4o-mini kept 94.7 quality at 94.1% lower cost",
+      "subtitle": "Demo run: 200 gpt-4o requests captured, 50 replayed per candidate (mock provider).",
+      "source": "Replay Lab README, run_experiment output. Deterministic mock provider; live Gemini run: 5/5 replays, 0 errors.",
+      "labels": [
+        "llama-3.1-8b",
+        "claude-3-haiku",
+        "gpt-4o-mini"
+      ],
+      "series": [
+        {
+          "name": "Quality score",
+          "values": [
+            34.9,
+            71.9,
+            94.7
+          ]
+        }
+      ],
+      "format": "0.0",
+      "min": 0,
+      "max": 100,
+      "show_values": true,
+      "side": {
+        "heading": "Verdicts",
+        "body": "gpt-4o-mini: **safe to switch**\n\nclaude-3-haiku: switch with caution\n\nllama-3.1-8b: do not switch (50% valid JSON)"
+      },
+      "callout": "The cheapest model is not the answer; the verdict says which one is."
+    },
+    {
+      "type": "section",
+      "title": "Stale-Answer Detector",
+      "subtitle": "Every claim, checked against the live web with Tavily."
+    },
+    {
+      "type": "flow",
+      "title": "Only claims that can go stale cost a search",
+      "subtitle": "Five stages, streamed live to the console over SSE.",
+      "steps": [
+        {
+          "heading": "Extract",
+          "body": "Atomic claims\nwith character\nspans."
+        },
+        {
+          "heading": "Triage",
+          "body": "Pricing 0.88 risk,\nversions 0.82,\ntimeless 0.05:\nskipped."
+        },
+        {
+          "heading": "Verify",
+          "body": "Tavily search on\nofficial domains,\nthen /extract the\nvendor page."
+        },
+        {
+          "heading": "Score",
+          "body": "0–100 with every\ncomponent shown."
+        },
+        {
+          "heading": "Correct",
+          "body": "Rewritten answer\nwith numbered\ncitations."
+        }
+      ],
+      "callout": "Web evidence is fenced as untrusted, so pages cannot inject instructions."
+    },
+    {
+      "type": "quote",
+      "text": "score = verdict × (0.35·agreement + 0.30·authority\n+ 0.20·recency + 0.15·relevance)",
+      "attribution": "Freshness score: deterministic and explainable, every term returned in score_breakdown",
+      "size": 26
+    },
+    {
+      "type": "stats",
+      "title": "100% precision on 30 labelled claims, 28 credits",
+      "subtitle": "Benchmark run live against the deployed API, LLM verification mode.",
+      "source": "backend/stale/benchmark/remote_results.json (30 labelled claims).",
+      "stats": [
+        {
+          "value": "100%",
+          "label": "Precision",
+          "detail": "11 stale claims caught,\n0 false positives"
+        },
+        {
+          "value": "73.3%",
+          "label": "Recall",
+          "detail": "4 misses; every miss\nwas an abstention"
+        },
+        {
+          "value": "28",
+          "label": "Tavily credits",
+          "detail": "for 30 claims; 8 skipped\nby triage at zero cost"
+        }
+      ],
+      "banner": "When there is no evidence it answers UNVERIFIABLE instead of guessing.",
+      "callout": "Precision over recall: a false alarm costs more trust than a miss."
+    },
+    {
+      "type": "image",
+      "side": "right",
+      "image": "console-stale.png",
+      "fit": "contain",
+      "caption": "Check an answer: progress streams stage by stage.",
+      "title": "Both tools live in one console",
+      "subtitle": "React + Vite + TypeScript, deployed on Vercel.",
+      "heading": "From paste to corrected answer",
+      "body": "Paste an answer, watch claims extracted and verified live, then read the score, evidence and correction.",
+      "points": [
+        "Replay Lab: captures, experiments, verdicts",
+        "Stale answers: check and history",
+        "Works on phone and tablet"
+      ],
+      "callout": "Try it: llm-reliability-console.vercel.app"
+    },
+    {
+      "type": "table",
+      "title": "Three services, each deployed only after CI passes",
+      "subtitle": "One repo; main is protected by five required checks.",
+      "columns": [
+        "Piece",
+        "Stack",
+        "Where it runs"
+      ],
+      "widths": [
+        1,
+        1.2,
+        1.2
+      ],
+      "first_col_bold": true,
+      "rows": [
+        [
+          "Console",
+          "React, Vite, TypeScript",
+          "Vercel"
+        ],
+        [
+          "Replay Lab gateway",
+          "Go, Bifrost core v1.15.1",
+          "Render (Docker)"
+        ],
+        [
+          "Stale Detector API",
+          "Python, FastAPI, Tavily",
+          "Render"
+        ],
+        [
+          "Contract check",
+          "Real backends vs console zod schemas",
+          "GitHub Actions, every PR"
+        ]
+      ],
+      "callout": "A change that breaks the console's reading of the API cannot merge."
+    },
+    {
+      "type": "next",
+      "title": "Try both checks on your own traffic",
+      "subtitle": "Everything runs without keys on mock providers,\nand live with Gemini and Tavily.",
+      "cards": [
+        {
+          "heading": "Open the console",
+          "body": "Send sample traffic,\nrun an experiment.",
+          "detail": "First request may take ~1 min (free tier wakes up)."
+        },
+        {
+          "heading": "Check an answer",
+          "body": "Load the example and\nwatch it get corrected.",
+          "detail": "Live Tavily search, ~4 s per claim."
+        },
+        {
+          "heading": "Read the code",
+          "body": "Go plugin, FastAPI\nservice, React console.",
+          "detail": "github.com/VIKI7-HUB/llm-reliability"
+        }
+      ],
+      "banner": "Ship the cheaper model with proof. Ship answers that are still true.",
+      "footer_label": "Next"
+    },
+    {
+      "type": "closing",
+      "title": "Don't take our word for it.\nCheck it live.",
+      "body": "Scan the code, paste any LLM answer, and watch\na stale fact get caught and corrected in seconds.",
+      "lines": [
+        "llm-reliability-console.vercel.app",
+        "github.com/VIKI7-HUB/llm-reliability  ·  Thank you, judges"
+      ]
+    }
+  ]
+}
