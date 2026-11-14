@@ -5,6 +5,18 @@ Two tools for running LLMs in production, and one console for both:
 - **Bifrost Replay Lab**: captures real gateway traffic, replays it against cheaper models under a budget cap, and returns a switch verdict (`SAFE_TO_SWITCH`, `SWITCH_WITH_CAUTION`, `DO_NOT_SWITCH`) with projected savings.
 - **Stale-Answer Detector**: checks the claims in an LLM answer against the live web with Tavily, and returns a scored report and a corrected answer.
 
+## Watch the demo (1:28)
+
+<p align="center">
+  <a href="docs/demo/llm-reliability-demo.mp4">
+    <img src="docs/demo/preview.gif" alt="LLM Reliability demo: a cheaper-model experiment with its verdict, and a stale answer caught and corrected" width="760">
+  </a>
+  <br>
+  <b><a href="docs/demo/llm-reliability-demo.mp4">▶ Play the full narrated demo</a></b> · recorded on the <a href="https://llm-reliability-console.vercel.app">live console</a>
+</p>
+
+The demo walks through both tools end to end: Replay Lab replays real Gemini traffic against two cheaper models and returns a verdict with monthly savings; the Stale-Answer Detector flags "Python 3.9 is the latest release" as stale, shows the evidence and score, and writes a corrected answer with its source.
+
 | Folder | What's there | Owner |
 | :--- | :--- | :--- |
 | [`frontend/`](frontend/) | The LLM Reliability Console (React, Vite, TypeScript) | Design: anyone; wiring (`frontend/src/api/`): backend owner |
