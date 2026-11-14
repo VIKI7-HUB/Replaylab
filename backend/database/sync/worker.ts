@@ -121,9 +121,22 @@ export class SyncWorker {
       if (this.stopped) break;
       await new Promise<void>((resolve) => {
         this.wake = resolve;
-        this.timer = setTimeout(resolve, this.cfg.syncIntervalMs);
+        this.timer = setTimeout(resolve, this.nextDelayMs());
       });
     }
+  }
+
+  /**
+   * How long to sleep before the next cycle: the normal interval, or sooner
+   * when a failed stream's backoff runs out first, so a backend that was
+   * waking up (or briefly down) is retried in seconds, not one interval later.
+   */
+  nextDelayMs(now = Date.now()): number {
+    let delay = this.cfg.syncIntervalMs;
+    for (const st of this.state.values()) {
+      if (st.failures > 0) delay = Math.min(delay, Math.max(0, st.nextAttemptAt - now));
+    }
+    return delay;
   }
 
   stop() {
